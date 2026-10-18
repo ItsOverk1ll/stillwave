@@ -31,11 +31,15 @@ SQLite via rusqlite (bundled, so FTS5 is always present), WAL mode, foreign keys
 - Playlist entries and likes point at **either** a library item **or** a placeholder (enforced by a CHECK constraint), so an imported Spotify playlist keeps its full shape even for songs you do not own yet.
 - Measured on the 50,000-track benchmark: search 1 to 8 ms (see benchmarks.md).
 
-## stillwave-audio (interfaces only)
+## stillwave-audio
 
-`Decoder` (file to interleaved left-aligned `i32` samples, never resampling), `OutputDevice` and `OutputStream` (opening a device must not resample; an unsupported format is an error the caller handles), and `SignalPath`, which records everything between file and device: source and output format, resampling, DSP, dither, software volume, exclusive mode, lossy source. `SignalPath::badge()` gives the UI's honest label (bit-perfect, processed, lossy).
+`FileDecoder` (Symphonia) turns a file into interleaved left-aligned `i32` samples without gain, rounding or dither. `OutputDevice`/`OutputStream` are the platform seam; `SignalPath` records everything between file and device (format, resampling, DSP, dither, software volume, exclusive mode, lossy source) and `badge()` gives the UI's honest label. `pack` converts samples to the device's byte layout. `Player` queues files, plays them gaplessly and reports status and signal path.
 
-Per-platform backends are empty modules behind `cfg` flags: WASAPI (Windows), ALSA/PipeWire (Linux), AAudio (Android), AVAudioSession (iOS). **Planned:** Phase 1 (desktop) and Phase 2 (mobile). Reference fixtures come from `scripts/gen_fixtures.py`; the hash-comparison harness in `tests/bit_perfect.rs` is ignored until a decoder exists.
+Windows has a real backend, `wasapi` (exclusive and shared, event-driven render thread, lock-free ring buffer); it is the only `unsafe` code in the crate. ALSA/PipeWire (Linux), AAudio (Android) and AVAudioSession (iOS) are still empty modules. See [phase1-audio-findings.md](phase1-audio-findings.md) for what is and is not verified, and ADR 0017 for the design.
+
+## stillwave-library
+
+Walks folders, reads tags and audio properties with Lofty, and stores them through `stillwave-db` in batches. Rescans skip files whose size and modified time are unchanged. It only reads audio files. See ADR 0016.
 
 ## stillwave-plugins and plugin-sdk
 

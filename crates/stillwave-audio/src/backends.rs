@@ -3,10 +3,7 @@
 //! on its platform so the structure exists and CI proves it builds everywhere.
 
 #[cfg(windows)]
-pub mod wasapi {
-    //! WASAPI (exclusive + shared). Phase 1.
-    pub const NAME: &str = "WASAPI";
-}
+pub use crate::wasapi;
 
 #[cfg(target_os = "linux")]
 pub mod alsa {

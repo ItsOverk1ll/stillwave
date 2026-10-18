@@ -3236,6 +3236,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ringbuf"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b58b631e416dd7d84549d7e6a50f767e111f9b03e30d04f40072f6618f386aaf"
+dependencies = [
+ "crossbeam-utils",
+ "portable-atomic",
+ "portable-atomic-util",
+]
+
+[[package]]
 name = "rusqlite"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3706,10 +3717,12 @@ dependencies = [
 name = "stillwave-audio"
 version = "0.0.1"
 dependencies = [
+ "ringbuf",
  "serde",
  "symphonia",
  "tempfile",
  "thiserror 2.0.21",
+ "windows",
 ]
 
 [[package]]

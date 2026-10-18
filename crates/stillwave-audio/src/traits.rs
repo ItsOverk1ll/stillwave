@@ -58,8 +58,29 @@ pub trait OutputDevice {
 pub trait OutputStream: Send {
     /// What the device is really doing, for the quality badge.
     fn signal_path(&self, source: StreamFormat, lossy_source: bool) -> SignalPath;
-    /// Blocks until `samples` (interleaved, left-aligned) are queued; returns how many were taken.
-    fn write(&mut self, samples: &[i32]) -> Result<usize, AudioError>;
+    /// Queues as many of `samples` (interleaved, left-aligned) as fit right now and
+    /// returns how many were taken (possibly 0). Never blocks.
+    fn try_write(&mut self, samples: &[i32]) -> Result<usize, AudioError>;
+
+    /// Queues all of `samples`, waiting for room. Prefer [`try_write`](Self::try_write)
+    /// where the caller must stay responsive (pause, seek).
+    fn write(&mut self, samples: &[i32]) -> Result<usize, AudioError> {
+        let mut rest = samples;
+        while !rest.is_empty() {
+            let n = self.try_write(rest)?;
+            rest = &rest[n..];
+            if n == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
+        Ok(samples.len())
+    }
+    /// Blocks until everything written so far has been played.
+    fn drain(&mut self) -> Result<(), AudioError>;
+    /// Throws away audio that was written but not yet played (used by seek and stop).
+    fn flush(&mut self) -> Result<(), AudioError>;
+    /// Audio frames the device has actually consumed so far (silence excluded).
+    fn frames_played(&self) -> u64;
     fn pause(&mut self) -> Result<(), AudioError>;
     fn resume(&mut self) -> Result<(), AudioError>;
 }

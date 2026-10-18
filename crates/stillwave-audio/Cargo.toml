@@ -8,12 +8,28 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+ringbuf = "0.5.3"
 serde = { version = "1", features = ["derive"] }
 symphonia = { version = "0.6.1", features = ["flac", "wav", "pcm", "alac", "isomp4", "mp3", "aac", "vorbis", "ogg", "aiff"] }
 thiserror = "2"
 
-[lints]
-workspace = true
+# Own lint table instead of `workspace = true`: the WASAPI backend needs `unsafe`
+# for COM calls. Everything else stays safe: `deny` (not `forbid`) lets exactly
+# one module opt in with `#[allow(unsafe_code)]`.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+assert_is_empty = "allow"
+chunks_exact_to_as_chunks = "allow"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[target."cfg(windows)".dependencies]
+windows = { version = "0.62.2", features = ["Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_Shell_PropertiesSystem", "Win32_Devices_FunctionDiscovery", "Win32_Foundation", "Win32_Security"] }

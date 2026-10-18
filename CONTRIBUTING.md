@@ -36,6 +36,8 @@ cd ../../plugin-sdk
 cargo test && cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
 ```
 
+The bit-perfect tests need generated audio: run `python scripts/gen_fixtures.py` (FLAC and ALAC need `ffmpeg` on PATH). Without fixtures they skip with a message; CI sets `STILLWAVE_REQUIRE_FIXTURES=1` so they fail instead.
+
 The 50,000-track search benchmark is `cargo bench -p stillwave-db`; record notable changes in `docs/benchmarks.md`.
 
 ## Code conventions

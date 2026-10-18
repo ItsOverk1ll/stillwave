@@ -7,11 +7,16 @@
 
 pub mod backends;
 pub mod format;
+pub mod pack;
+pub mod player;
 pub mod signal_path;
 pub mod symphonia_decoder;
 pub mod traits;
+#[cfg(windows)]
+pub mod wasapi;
 
 pub use format::StreamFormat;
+pub use player::{PlayState, Player, PlayerOptions, PlayerStatus};
 pub use signal_path::{QualityBadge, SignalPath};
 pub use symphonia_decoder::FileDecoder;
 pub use traits::{AudioError, Decoder, OutputDevice, OutputMode, OutputStream};

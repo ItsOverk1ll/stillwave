@@ -18,3 +18,4 @@ One short record per decision. Decisions listed in `CLAUDE.md` are settled; ask 
 - [0014 Server (later): Cloudflare Workers, D1, Durable Objects, R2](0014-server.md)
 - [0015 Plugin manifest format: TOML](0015-manifest-toml.md)
 - [0016 A separate stillwave-library crate for scanning](0016-library-crate.md)
+- [0017 Phase 1 audio engine design](0017-audio-engine.md)

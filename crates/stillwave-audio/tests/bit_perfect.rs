@@ -298,3 +298,63 @@ fn lossy_files_are_flagged_lossy_and_still_decode() {
         assert!(buf[..n].iter().all(|s| s & 0xFF == 0));
     }
 }
+
+/// Raw bytes of the `data` chunk of a WAV file.
+fn wav_data_bytes(path: &Path) -> Vec<u8> {
+    let b = std::fs::read(path).unwrap();
+    let mut pos = 12;
+    while pos + 8 <= b.len() {
+        let len = u32::from_le_bytes(b[pos + 4..pos + 8].try_into().unwrap()) as usize;
+        if &b[pos..pos + 4] == b"data" {
+            return b[pos + 8..pos + 8 + len].to_vec();
+        }
+        pos += 8 + len + (len & 1);
+    }
+    panic!("no data chunk");
+}
+
+/// The whole chain the device sees: file -> decoder -> packing. For FLAC and ALAC
+/// the bytes handed to the device must equal the PCM bytes inside the original WAV.
+#[test]
+fn packed_device_bytes_equal_the_original_wav_pcm() {
+    use stillwave_audio::pack::{pack, Container};
+    for ext in ["flac", "m4a"] {
+        if !fixtures_ready(ext) {
+            continue;
+        }
+        for (tag, _rate, bits) in FORMATS {
+            let container = if *bits == 16 {
+                Container::Bits16
+            } else {
+                Container::Bits24Packed
+            };
+            let (_, _, decoded) = decode_all(&dir().join(format!("sweep-{tag}.{ext}")));
+            let mut bytes = vec![0u8; decoded.len() * container.bytes()];
+            pack(&decoded, container, &mut bytes);
+            let original = wav_data_bytes(&dir().join(format!("sweep-{tag}.wav")));
+            assert!(
+                bytes == original,
+                "{ext} {tag}: device bytes differ from the WAV's PCM"
+            );
+        }
+    }
+}
+
+/// 24-bit audio through a 32-bit container (common for USB DACs) keeps all 24 bits.
+#[test]
+fn twenty_four_bit_audio_in_a_32_bit_container_is_lossless() {
+    use stillwave_audio::pack::{pack, unpack, Container};
+    if !fixtures_ready("flac") {
+        return;
+    }
+    let (_, _, decoded) = decode_all(&dir().join("sweep-24-192k.flac"));
+    let mut bytes = vec![0u8; decoded.len() * 4];
+    pack(&decoded, Container::Bits32, &mut bytes);
+    let mut back = vec![0i32; decoded.len()];
+    unpack(&bytes, Container::Bits32, &mut back);
+    assert_eq!(first_difference(&back, &decoded), None);
+    assert!(
+        bytes.chunks_exact(4).all(|s| s[0] == 0),
+        "low byte of a 24-bit sample in 32 bits is zero"
+    );
+}

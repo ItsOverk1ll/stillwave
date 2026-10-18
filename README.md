@@ -1,6 +1,6 @@
 # Stillwave
 
-**Status: pre-alpha.** Phase 0 (foundations) only. There is no playback, library scanning or import yet.
+**Status: pre-alpha.** Phase 0 (foundations) is done. Phase 1 is under way: the library scanner, bit-perfect decoding and a Windows WASAPI player exist as tested libraries and command-line examples, but the app has no library or player screens yet and nothing has been listened to on real hardware. There is no import yet.
 
 Stillwave is an open-source "super Spotify" for music you own: Spotify's comfort (synced playlists, mixes, radio, offline downloads, a yearly recap, device handoff) on top of bit-perfect playback of your own files. It runs on Windows, Linux, Raspberry Pi, Android and iPhone from one codebase, syncs through an optional account, and grows through sandboxed plugins.
 
@@ -30,7 +30,8 @@ Stillwave is an open-source "super Spotify" for music you own: Spotify's comfort
 ```
 crates/stillwave-core     domain types, UUIDv7 IDs, hybrid logical clock
 crates/stillwave-db       SQLite schema, migrations, change log, FTS5 search
-crates/stillwave-audio    decoder/output traits, signal-path model (no playback yet)
+crates/stillwave-audio    decoder, signal-path model, player, WASAPI output (Windows)
+crates/stillwave-library  folder scanner: Lofty tags into the database
 crates/stillwave-plugins  plugin manifest, ed25519 signing, WASM host
 apps/stillwave            Tauri 2 app (React + TypeScript), desktop and mobile
 plugin-sdk                MIT-licensed SDK and an example plugin
