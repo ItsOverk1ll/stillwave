@@ -5,6 +5,7 @@ members = [
     "crates/stillwave-db",
     "crates/stillwave-audio",
     "crates/stillwave-plugins",
+    "apps/stillwave/src-tauri",
 ]
 
 exclude = ["plugin-sdk"]
