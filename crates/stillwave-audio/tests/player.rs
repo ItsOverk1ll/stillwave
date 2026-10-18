@@ -362,6 +362,30 @@ fn seeking_drops_buffered_audio_and_continues_from_the_new_position() {
 }
 
 #[test]
+fn playing_from_the_middle_of_a_queue_starts_there_and_keeps_the_queue() {
+    let (Some(a), Some(b)) = (
+        fixture("gapless-a-16-44k.flac"),
+        fixture("gapless-b-16-44k.flac"),
+    ) else {
+        return;
+    };
+    let Some(rb) = fixture("gapless-b-16-44k.wav") else {
+        return;
+    };
+    let r = rig(false, false, false);
+    r.player.play_at(vec![a, b], 1);
+    assert!(r.player.wait_until_idle(WAIT));
+    let st = r.player.status();
+    assert_eq!(st.state, PlayState::Finished);
+    assert_eq!(st.queue.len(), 2, "the whole queue is kept for display");
+    assert_eq!(st.index, Some(1));
+    assert!(
+        streams()[0].lock().unwrap().samples == reference(&rb),
+        "only the second file played"
+    );
+}
+
+#[test]
 fn an_unreadable_file_is_skipped_and_reported_not_fatal() {
     let Some(good) = fixture("gapless-a-16-44k.wav") else {
         return;

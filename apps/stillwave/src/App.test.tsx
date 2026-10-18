@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import * as api from "./api";
-import type { ScanFinished, ScanProgress, Settings, TrackRow } from "./api";
+import type { AlbumView, PlayerView, ScanFinished, ScanProgress, Settings, TrackRow } from "./api";
 
 vi.mock("./api");
 
@@ -14,7 +14,9 @@ function track(n: number, over: Partial<TrackRow> = {}): TrackRow {
     id: `id-${n.toString()}`,
     title: `Song ${n.toString()}`,
     artist: "The Band",
+    artistId: "artist-1",
     album: "The Album",
+    albumId: "album-1",
     trackNumber: n,
     durationMs: 187_000,
     codec: "flac",
@@ -24,6 +26,20 @@ function track(n: number, over: Partial<TrackRow> = {}): TrackRow {
     ...over,
   };
 }
+
+const album = (over: Partial<AlbumView> = {}): AlbumView => ({
+  id: "album-1",
+  title: "The Album",
+  artist: "The Band",
+  artistId: "artist-1",
+  year: 1999,
+  trackCount: 3,
+  durationMs: 561_000,
+  codec: "flac",
+  maxSampleRateHz: 96_000,
+  maxBitDepth: 24,
+  ...over,
+});
 
 const settings = (over: Partial<Settings> = {}): Settings => ({
   musicFolder: "D:\\Music",
@@ -49,7 +65,7 @@ beforeEach(() => {
   mocked.listAudioDevices.mockResolvedValue([]);
   mocked.startScan.mockResolvedValue();
   mocked.cancelScan.mockResolvedValue();
-  mocked.playFrom.mockResolvedValue();
+  mocked.play.mockResolvedValue();
   mocked.setAudioOptions.mockResolvedValue();
   mocked.playerStatus.mockResolvedValue({
     state: "stopped",
@@ -60,6 +76,30 @@ beforeEach(() => {
     badge: null,
     signal: null,
     error: null,
+    queueVersion: 0,
+  });
+  mocked.playQueue.mockResolvedValue({ version: 0, entries: [] });
+  mocked.jumpTo.mockResolvedValue();
+  mocked.albumsPage.mockResolvedValue({ rows: [album()], total: 1 });
+  mocked.artistsPage.mockResolvedValue({
+    rows: [{ id: "artist-1", name: "The Band", albumCount: 1, trackCount: 3 }],
+    total: 1,
+  });
+  mocked.albumDetail.mockResolvedValue({ album: album(), tracks: [track(1), track(2), track(3)] });
+  mocked.artistDetail.mockResolvedValue({
+    artist: { id: "artist-1", name: "The Band", albumCount: 1, trackCount: 4 },
+    albums: [
+      { ...album(), appearsOn: false },
+      {
+        ...album({
+          id: "album-2",
+          title: "Hits Compilation",
+          artist: "Various Artists",
+          artistId: "va",
+        }),
+        appearsOn: true,
+      },
+    ],
   });
   mocked.libraryPage.mockImplementation((query, offset, limit) => {
     const all = query ? [track(7, { title: "Abba match" })] : [track(1), track(2), track(3)];
@@ -202,7 +242,7 @@ describe("library", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Play Song 2" }));
     await waitFor(() => {
-      expect(mocked.playFrom).toHaveBeenCalledWith("", 1);
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "library", query: "" }, 1);
     });
   });
 
@@ -225,21 +265,20 @@ describe("library", () => {
       signal: null,
       error:
         "Nothing could be played. Headset: this device does not accept 24-bit / 44.1 kHz / 2 ch in exclusive mode",
+      queueVersion: 0,
     });
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Play Song 2" }));
     fireEvent.click(await screen.findByRole("button", { name: /use the windows mixer/i }));
     await waitFor(() => {
       expect(mocked.setAudioOptions).toHaveBeenCalledWith("exclusive_fallback", null);
-      expect(mocked.playFrom).toHaveBeenCalledTimes(2);
+      expect(mocked.play).toHaveBeenCalledTimes(2);
     });
-    expect(mocked.playFrom).toHaveBeenLastCalledWith("", 1);
+    expect(mocked.play).toHaveBeenLastCalledWith({ kind: "library", query: "" }, 1);
   });
 
   it("explains a playback failure instead of failing silently", async () => {
-    mocked.playFrom.mockRejectedValue(
-      "The device does not support 24-bit / 96 kHz in exclusive mode",
-    );
+    mocked.play.mockRejectedValue("The device does not support 24-bit / 96 kHz in exclusive mode");
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "Play Song 1" }));
     expect((await screen.findByRole("alert")).textContent).toContain("exclusive mode");
@@ -257,5 +296,114 @@ describe("about", () => {
     mocked.getSettings.mockRejectedValue(new Error("no tauri"));
     render(<App />);
     expect((await screen.findByRole("alert")).textContent).toContain("no tauri");
+  });
+});
+
+const nowPlaying = (n: number, over: Partial<PlayerView> = {}): PlayerView => ({
+  state: "playing",
+  index: n - 1,
+  positionMs: 1000,
+  durationMs: 187_000,
+  nowPlaying: {
+    itemId: `id-${n.toString()}`,
+    title: `Song ${n.toString()}`,
+    artist: "The Band",
+    album: "The Album",
+    durationMs: 187_000,
+  },
+  badge: "lossy",
+  signal: null,
+  error: null,
+  queueVersion: 1,
+  ...over,
+});
+
+describe("browsing", () => {
+  it("lists albums and opens one, showing its tracks and quality", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Albums" }));
+    fireEvent.click(await screen.findByText("The Album"));
+    const page = await screen.findByRole("region", { name: "Album The Album" });
+    expect(page.textContent).toContain("1999");
+    expect(page.textContent).toContain("3 tracks");
+    expect(page.textContent).toContain("FLAC 24/96");
+    expect(mocked.albumDetail).toHaveBeenCalledWith("album-1");
+  });
+
+  it("plays an album from the start or from a chosen track", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Albums" }));
+    fireEvent.click(await screen.findByText("The Album"));
+    fireEvent.click(await screen.findByRole("button", { name: "Play album" }));
+    fireEvent.click(screen.getByRole("button", { name: "Play Song 3" }));
+    await waitFor(() => {
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "album", id: "album-1" }, 0);
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "album", id: "album-1" }, 2);
+    });
+  });
+
+  it("opens an artist from a song's artist name, with albums and appearances", async () => {
+    render(<App />);
+    const links = await screen.findAllByRole("button", { name: "The Band" });
+    fireEvent.click(links[0]);
+    const page = await screen.findByRole("region", { name: "Artist The Band" });
+    expect(page.textContent).toContain("Appears on");
+    expect(page.textContent).toContain("Hits Compilation");
+    fireEvent.click(screen.getByRole("button", { name: "Play all" }));
+    await waitFor(() => {
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "artist", id: "artist-1" }, 0);
+    });
+  });
+
+  it("goes back to where you were", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Artists" }));
+    fireEvent.click(await screen.findByText("The Band"));
+    await screen.findByRole("region", { name: "Artist The Band" });
+    fireEvent.click(screen.getByText("The Album"));
+    await screen.findByRole("region", { name: "Album The Album" });
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(await screen.findByRole("region", { name: "Artist The Band" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(await screen.findByRole("list", { name: "Artists" })).toBeTruthy();
+  });
+
+  it("highlights the song being heard in the list and on its album", async () => {
+    mocked.playerStatus.mockResolvedValue(nowPlaying(2));
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Play Song 2" }).textContent).toBe("♫");
+    });
+    expect(screen.getByText(/now playing/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Albums" }));
+    fireEvent.click(await screen.findByText("The Album"));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Play Song 2" }).textContent).toBe("♫");
+    });
+    expect(screen.getByRole("button", { name: "Play Song 1" }).textContent).toBe("1");
+  });
+
+  it("shows the queue and jumps within it", async () => {
+    mocked.playerStatus.mockResolvedValue(nowPlaying(1));
+    mocked.playQueue.mockResolvedValue({
+      version: 1,
+      entries: [1, 2, 3].map((n) => ({
+        itemId: `id-${n.toString()}`,
+        title: `Queued ${n.toString()}`,
+        artist: "The Band",
+        album: "The Album",
+        durationMs: 60_000,
+      })),
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Queue" }));
+    const panel = await screen.findByRole("complementary", { name: "Play queue" });
+    await waitFor(() => {
+      expect(panel.textContent).toContain("Queued 3");
+    });
+    fireEvent.click(screen.getByText("Queued 3"));
+    await waitFor(() => {
+      expect(mocked.jumpTo).toHaveBeenCalledWith(2);
+    });
   });
 });

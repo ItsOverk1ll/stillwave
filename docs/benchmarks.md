@@ -44,3 +44,17 @@ Run with `cargo bench -p stillwave-db --bench library`.
 Lesson recorded: the first version joined artists, albums and files **before** applying `LIMIT/OFFSET`, so a page at row 25,000 took 615 ms and one at the end 1.25 s. Selecting the page's row IDs from an index first and joining only those rows brought deep pages to 6 to 9 ms. The library order comes from a stored, indexed `sort_key` (artist, album, disc, track, title).
 
 Not measured: the time to read the tags of 50,000 real files from disk (the importer number excludes it), and a cold OS file cache.
+
+## Albums and artists (same 50,000 tracks; worst case of one album per track)
+
+| Query | Median | Budget |
+| --- | --- | --- |
+| Albums page of 100 at the top | 2.4 ms | 100 ms |
+| Albums page of 100 at the end (50,000 albums) | 25 ms | 100 ms |
+| Artists page of 100 at the end (2,000 artists) | 8 ms | 100 ms |
+| One album's tracks | 0.006 ms | 100 ms |
+| One artist's albums (own and "appears on") | 0.19 ms | 100 ms |
+
+Lessons recorded:
+- Without table statistics SQLite chose to compute each album's codec and quality by walking every file on the device through the `(device, path)` index: an album page took **12 to 16 s** and an artist's albums 6.5 s. `CROSS JOIN` now pins the order (album's tracks, then their files) and the app runs `PRAGMA optimize` after every scan.
+- Sorting albums by a joined artist name on every page cost 164 ms at the end of the list. Albums now carry an indexed `sort_key` kept current by SQL triggers (schema v5), the same approach as tracks.

@@ -56,12 +56,15 @@ pub struct AudioDevice {
     pub is_default: bool,
 }
 
-/// What is shown for the track being heard.
+/// What is shown for a queue entry (and for the track being heard).
 #[derive(Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct QueueEntry {
+    pub item_id: String,
     pub title: String,
     pub artist: Option<String>,
     pub album: Option<String>,
+    pub duration_ms: Option<u64>,
 }
 
 // Each flag is an independent fact shown to the user.
@@ -92,6 +95,8 @@ pub struct PlayerView {
     pub badge: Option<&'static str>,
     pub signal: Option<SignalView>,
     pub error: Option<String>,
+    /// Matches `play_queue`'s version; when it changes the UI refetches the queue.
+    pub queue_version: u64,
 }
 
 impl PlayerView {
@@ -105,10 +110,11 @@ impl PlayerView {
             badge: None,
             signal: None,
             error: None,
+            queue_version: 0,
         }
     }
 
-    pub fn from_status(st: &PlayerStatus, queue: &[QueueEntry]) -> Self {
+    pub fn from_status(st: &PlayerStatus, queue: &[QueueEntry], queue_version: u64) -> Self {
         let rate = st.format.map_or(0, |f| u64::from(f.sample_rate_hz));
         let ms = |frames: u64| (frames * 1000).checked_div(rate).unwrap_or(0);
         let signal = st.signal_path.as_ref();
@@ -140,6 +146,7 @@ impl PlayerView {
                 lossy: s.lossy_source,
             }),
             error: st.error.clone(),
+            queue_version,
         }
     }
 }

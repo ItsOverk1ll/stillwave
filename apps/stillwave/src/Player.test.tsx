@@ -6,6 +6,7 @@ import type { PlayerView, SignalView } from "./api";
 import AudioSettings from "./AudioSettings";
 import { explainSignal, formatDuration, formatQuality } from "./format";
 import PlayerBar from "./PlayerBar";
+import QueuePanel from "./QueuePanel";
 
 vi.mock("./api");
 const mocked = vi.mocked(api);
@@ -28,13 +29,16 @@ const playing = (over: Partial<PlayerView> = {}): PlayerView => ({
   positionMs: 65_000,
   durationMs: 187_000,
   nowPlaying: {
+    itemId: "item-1",
     title: "Roygbiv",
     artist: "Boards of Canada",
     album: "Music Has the Right to Children",
+    durationMs: 187_000,
   },
   badge: "bit_perfect",
   signal: signal(),
   error: null,
+  queueVersion: 1,
   ...over,
 });
 
@@ -53,8 +57,7 @@ afterEach(() => {
 
 describe("PlayerBar", () => {
   it("shows what is playing, its position and a Bit-perfect badge", async () => {
-    mocked.playerStatus.mockResolvedValue(playing());
-    render(<PlayerBar onError={vi.fn()} />);
+    render(<PlayerBar view={playing()} onError={vi.fn()} />);
     expect(await screen.findByText("Roygbiv")).toBeTruthy();
     expect(screen.getByText(/Boards of Canada/)).toBeTruthy();
     expect(screen.getByText("1:05")).toBeTruthy();
@@ -63,10 +66,15 @@ describe("PlayerBar", () => {
   });
 
   it("opens the signal path and says why a path is not bit-perfect", async () => {
-    mocked.playerStatus.mockResolvedValue(
-      playing({ badge: "processed", signal: signal({ exclusive: false, softwareVolume: true }) }),
+    render(
+      <PlayerBar
+        view={playing({
+          badge: "processed",
+          signal: signal({ exclusive: false, softwareVolume: true }),
+        })}
+        onError={vi.fn()}
+      />,
     );
-    render(<PlayerBar onError={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Processed" }));
     const region = screen.getByRole("region", { name: "Signal path" });
     expect(region.textContent).toContain("Windows mixer");
@@ -74,10 +82,12 @@ describe("PlayerBar", () => {
   });
 
   it("labels lossy sources honestly", async () => {
-    mocked.playerStatus.mockResolvedValue(
-      playing({ badge: "lossy", signal: signal({ lossy: true }) }),
+    render(
+      <PlayerBar
+        view={playing({ badge: "lossy", signal: signal({ lossy: true }) })}
+        onError={vi.fn()}
+      />,
     );
-    render(<PlayerBar onError={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Lossy source" }));
     expect(screen.getByRole("region", { name: "Signal path" }).textContent).toContain(
       "lossy compression",
@@ -85,8 +95,7 @@ describe("PlayerBar", () => {
   });
 
   it("pauses, stops and skips", async () => {
-    mocked.playerStatus.mockResolvedValue(playing());
-    render(<PlayerBar onError={vi.fn()} />);
+    render(<PlayerBar view={playing()} onError={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     fireEvent.click(screen.getByRole("button", { name: "Next track" }));
@@ -98,8 +107,7 @@ describe("PlayerBar", () => {
   });
 
   it("resumes when paused", async () => {
-    mocked.playerStatus.mockResolvedValue(playing({ state: "paused" }));
-    render(<PlayerBar onError={vi.fn()} />);
+    render(<PlayerBar view={playing({ state: "paused" })} onError={vi.fn()} />);
     fireEvent.click(await screen.findByRole("button", { name: "Play" }));
     await waitFor(() => {
       expect(mocked.resume).toHaveBeenCalled();
@@ -107,8 +115,7 @@ describe("PlayerBar", () => {
   });
 
   it("seeks to where the slider is released", async () => {
-    mocked.playerStatus.mockResolvedValue(playing());
-    render(<PlayerBar onError={vi.fn()} />);
+    render(<PlayerBar view={playing()} onError={vi.fn()} />);
     const slider = await screen.findByRole("slider", { name: "Position" });
     fireEvent.change(slider, { target: { value: "120000" } });
     fireEvent.pointerUp(slider);
@@ -118,17 +125,22 @@ describe("PlayerBar", () => {
   });
 
   it("is quiet when nothing is playing, and shows a failure", async () => {
-    mocked.playerStatus.mockResolvedValue({
-      state: "stopped",
-      index: null,
-      positionMs: 0,
-      durationMs: null,
-      nowPlaying: null,
-      badge: null,
-      signal: null,
-      error: "device unplugged",
-    });
-    render(<PlayerBar onError={vi.fn()} />);
+    render(
+      <PlayerBar
+        view={{
+          state: "stopped",
+          index: null,
+          positionMs: 0,
+          durationMs: null,
+          nowPlaying: null,
+          badge: null,
+          signal: null,
+          error: "device unplugged",
+          queueVersion: 0,
+        }}
+        onError={vi.fn()}
+      />,
+    );
     expect(await screen.findByText("Nothing playing.")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("device unplugged");
     expect(screen.queryByRole("slider")).toBeNull();
@@ -145,15 +157,19 @@ describe("PlayerBar errors", () => {
     badge: null,
     signal: null,
     error,
+    queueVersion: 0,
   });
 
   it("shows why nothing played, without a fake 'Unknown track'", async () => {
-    mocked.playerStatus.mockResolvedValue(
-      refused(
-        "Nothing could be played. Speakers (PRO X 2 LIGHTSPEED): this device does not accept 24-bit / 44.1 kHz / 2 ch in exclusive mode",
-      ),
+    render(
+      <PlayerBar
+        view={refused(
+          "Nothing could be played. Speakers (PRO X 2 LIGHTSPEED): this device does not accept 24-bit / 44.1 kHz / 2 ch in exclusive mode",
+        )}
+        onError={vi.fn()}
+        onUseMixer={vi.fn()}
+      />,
     );
-    render(<PlayerBar onError={vi.fn()} onUseMixer={vi.fn()} />);
     expect((await screen.findByRole("alert")).textContent).toContain("PRO X 2");
     expect(screen.queryByText("Unknown track")).toBeNull();
     expect(screen.getByText("Playback stopped.")).toBeTruthy();
@@ -161,19 +177,27 @@ describe("PlayerBar errors", () => {
 
   it("offers the mixer when a device refuses exclusive mode", async () => {
     const onUseMixer = vi.fn();
-    mocked.playerStatus.mockResolvedValue(
-      refused(
-        "Nothing could be played. X: this device does not accept 24-bit / 96 kHz / 2 ch in exclusive mode",
-      ),
+    render(
+      <PlayerBar
+        view={refused(
+          "Nothing could be played. X: this device does not accept 24-bit / 96 kHz / 2 ch in exclusive mode",
+        )}
+        onError={vi.fn()}
+        onUseMixer={onUseMixer}
+      />,
     );
-    render(<PlayerBar onError={vi.fn()} onUseMixer={onUseMixer} />);
     fireEvent.click(await screen.findByRole("button", { name: /use the windows mixer/i }));
     expect(onUseMixer).toHaveBeenCalled();
   });
 
   it("does not offer the mixer for unrelated errors", async () => {
-    mocked.playerStatus.mockResolvedValue(refused("Nothing could be played. file is corrupt"));
-    render(<PlayerBar onError={vi.fn()} onUseMixer={vi.fn()} />);
+    render(
+      <PlayerBar
+        view={refused("Nothing could be played. file is corrupt")}
+        onError={vi.fn()}
+        onUseMixer={vi.fn()}
+      />,
+    );
     await screen.findByRole("alert");
     expect(screen.queryByRole("button", { name: /use the windows mixer/i })).toBeNull();
   });
@@ -231,5 +255,50 @@ describe("formatting", () => {
     );
     expect(explainSignal("lossy", signal({ lossy: true }))[0]).toMatch(/lossy/);
     expect(explainSignal("bit_perfect", signal())[0]).toMatch(/exactly as stored/);
+  });
+});
+
+describe("PlayerBar queue button", () => {
+  it("toggles the queue", () => {
+    const onToggle = vi.fn();
+    render(
+      <PlayerBar view={playing()} queueOpen={false} onToggleQueue={onToggle} onError={vi.fn()} />,
+    );
+    const button = screen.getByRole("button", { name: "Queue" });
+    expect(button.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(button);
+    expect(onToggle).toHaveBeenCalled();
+  });
+});
+
+describe("QueuePanel", () => {
+  const entries = ["One", "Two", "Three"].map((title, i) => ({
+    itemId: `i${i.toString()}`,
+    title,
+    artist: "Band",
+    album: "LP",
+    durationMs: 60_000,
+  }));
+
+  it("marks the current entry and how far through the queue we are", () => {
+    render(<QueuePanel entries={entries} current={1} onJump={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText("2 of 3")).toBeTruthy();
+    const current = screen.getByRole("button", { current: true });
+    expect(current.textContent).toContain("Two");
+  });
+
+  it("jumps to a clicked entry and closes", () => {
+    const onJump = vi.fn();
+    const onClose = vi.fn();
+    render(<QueuePanel entries={entries} current={0} onJump={onJump} onClose={onClose} />);
+    fireEvent.click(screen.getByText("Three"));
+    expect(onJump).toHaveBeenCalledWith(2);
+    fireEvent.click(screen.getByRole("button", { name: "Close queue" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("says when nothing is queued", () => {
+    render(<QueuePanel entries={[]} current={null} onJump={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.getByText(/Nothing queued/)).toBeTruthy();
   });
 });

@@ -13,7 +13,9 @@ pub struct LibraryRow {
     pub item_id: String,
     pub title: String,
     pub artist: Option<String>,
+    pub artist_id: Option<String>,
     pub album: Option<String>,
+    pub album_id: Option<String>,
     pub track_number: Option<u32>,
     pub duration_ms: Option<u64>,
     /// File on this device, if the item has one (a vanished file leaves none).
@@ -27,10 +29,11 @@ pub struct LibraryRow {
 /// Joins are applied only to the rows of one page: `page` is a subquery that picks
 /// the page's row IDs from an index first. Joining before paging would run every
 /// join for every skipped row, which takes over a second at the end of 50,000 rows.
-const ROW_COLUMNS: &str = "SELECT m.id, m.title, a.name, al.title, m.track_number, m.duration_ms,
-        f.path, f.codec, f.sample_rate_hz, f.bit_depth, f.channels";
+pub(super) const ROW_COLUMNS: &str =
+    "SELECT m.id, m.title, a.name, al.title, m.track_number, m.duration_ms,
+        f.path, f.codec, f.sample_rate_hz, f.bit_depth, f.channels, m.artist_id, m.album_id";
 
-const ROW_JOINS: &str = "JOIN media_items m ON m.rowid = page.rid
+pub(super) const ROW_JOINS: &str = "JOIN media_items m ON m.rowid = page.rid
     LEFT JOIN artists a ON a.id = m.artist_id
     LEFT JOIN albums al ON al.id = m.album_id
     LEFT JOIN media_files f ON f.media_item_id = m.id AND f.device_id = ?1";
@@ -41,26 +44,8 @@ impl Db {
     pub fn library_rows(&self, query: &str, limit: u32, offset: u32) -> Result<Vec<LibraryRow>> {
         let limit = limit.min(500);
         let device = self.device.as_bytes().as_slice();
-        let map = |r: &rusqlite::Row| -> rusqlite::Result<(Vec<u8>, LibraryRow)> {
-            let id: Vec<u8> = r.get(0)?;
-            Ok((
-                id,
-                LibraryRow {
-                    item_id: String::new(),
-                    title: r.get(1)?,
-                    artist: r.get(2)?,
-                    album: r.get(3)?,
-                    track_number: r.get(4)?,
-                    duration_ms: r.get(5)?,
-                    path: r.get(6)?,
-                    codec: r.get(7)?,
-                    sample_rate_hz: r.get(8)?,
-                    bit_depth: r.get(9)?,
-                    channels: r.get(10)?,
-                },
-            ))
-        };
-        let rows: Vec<(Vec<u8>, LibraryRow)> = if let Some(fts) = fts_query(query) {
+        let map = raw_row;
+        let rows: Vec<RawRow> = if let Some(fts) = fts_query(query) {
             let mut stmt = self.conn.prepare_cached(&format!(
                 "{ROW_COLUMNS} FROM (
                      SELECT rowid AS rid, rank FROM search_index
@@ -79,13 +64,7 @@ impl Db {
             let it = stmt.query_map(params![device, limit, offset], map)?;
             it.collect::<std::result::Result<_, _>>()?
         };
-        rows.into_iter()
-            .map(|(id, mut row)| {
-                let id = super::to_id(&id)?;
-                row.item_id = stillwave_core::MediaItemId::from_bytes(id).to_string();
-                Ok(row)
-            })
-            .collect()
+        finish_rows(rows)
     }
 
     /// Number of rows `library_rows` would return in total for `query`.
@@ -120,6 +99,13 @@ impl Db {
         Ok(())
     }
 
+    /// Refreshes the query planner's statistics. Cheap; call after large writes
+    /// such as a scan so later queries keep choosing good plans.
+    pub fn optimize(&self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA optimize;")?;
+        Ok(())
+    }
+
     /// File path of an item on this device.
     pub fn item_path(&self, item: stillwave_core::MediaItemId) -> Result<Option<String>> {
         Ok(self
@@ -134,4 +120,60 @@ impl Db {
             )
             .optional()?)
     }
+}
+
+/// A row as read, before its IDs are turned into strings.
+pub(super) struct RawRow {
+    id: Vec<u8>,
+    artist_id: Option<Vec<u8>>,
+    album_id: Option<Vec<u8>>,
+    row: LibraryRow,
+}
+
+/// Reads one `ROW_COLUMNS` row.
+pub(super) fn raw_row(r: &rusqlite::Row) -> rusqlite::Result<RawRow> {
+    Ok(RawRow {
+        id: r.get(0)?,
+        artist_id: r.get(11)?,
+        album_id: r.get(12)?,
+        row: LibraryRow {
+            item_id: String::new(),
+            title: r.get(1)?,
+            artist: r.get(2)?,
+            artist_id: None,
+            album: r.get(3)?,
+            album_id: None,
+            track_number: r.get(4)?,
+            duration_ms: r.get(5)?,
+            path: r.get(6)?,
+            codec: r.get(7)?,
+            sample_rate_hz: r.get(8)?,
+            bit_depth: r.get(9)?,
+            channels: r.get(10)?,
+        },
+    })
+}
+
+/// Turns raw rows into rows with string IDs.
+pub(super) fn finish_rows(rows: Vec<RawRow>) -> Result<Vec<LibraryRow>> {
+    rows.into_iter()
+        .map(|raw| {
+            let mut row = raw.row;
+            row.item_id =
+                stillwave_core::MediaItemId::from_bytes(super::to_id(&raw.id)?).to_string();
+            row.artist_id = raw
+                .artist_id
+                .map(|b| {
+                    super::to_id(&b).map(|i| stillwave_core::ArtistId::from_bytes(i).to_string())
+                })
+                .transpose()?;
+            row.album_id = raw
+                .album_id
+                .map(|b| {
+                    super::to_id(&b).map(|i| stillwave_core::AlbumId::from_bytes(i).to_string())
+                })
+                .transpose()?;
+            Ok(row)
+        })
+        .collect()
 }

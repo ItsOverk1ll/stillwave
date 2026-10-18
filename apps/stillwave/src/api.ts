@@ -30,7 +30,9 @@ export interface TrackRow {
   id: string;
   title: string;
   artist: string | null;
+  artistId: string | null;
   album: string | null;
+  albumId: string | null;
   trackNumber: number | null;
   durationMs: number | null;
   codec: string | null;
@@ -40,9 +42,61 @@ export interface TrackRow {
   playable: boolean;
 }
 
-export interface LibraryPage {
-  rows: TrackRow[];
+export interface Page<T> {
+  rows: T[];
   total: number;
+}
+export type LibraryPage = Page<TrackRow>;
+
+export interface AlbumView {
+  id: string;
+  title: string;
+  artist: string | null;
+  artistId: string | null;
+  year: number | null;
+  trackCount: number;
+  durationMs: number;
+  /** Set when every track shares one codec. */
+  codec: string | null;
+  maxSampleRateHz: number | null;
+  maxBitDepth: number | null;
+}
+
+export interface ArtistView {
+  id: string;
+  name: string;
+  albumCount: number;
+  trackCount: number;
+}
+
+export interface AlbumDetail {
+  album: AlbumView;
+  tracks: TrackRow[];
+}
+
+export interface ArtistDetail {
+  artist: ArtistView;
+  /** `appearsOn`: credited to someone else but includes this artist. */
+  albums: (AlbumView & { appearsOn: boolean })[];
+}
+
+/** What a play starts from; decides what goes in the queue. */
+export type PlayContext =
+  | { kind: "library"; query: string }
+  | { kind: "album"; id: string }
+  | { kind: "artist"; id: string };
+
+export interface QueueEntry {
+  itemId: string;
+  title: string;
+  artist: string | null;
+  album: string | null;
+  durationMs: number | null;
+}
+
+export interface QueueView {
+  version: number;
+  entries: QueueEntry[];
 }
 
 export interface ScanProgress {
@@ -82,10 +136,12 @@ export interface PlayerView {
   index: number | null;
   positionMs: number;
   durationMs: number | null;
-  nowPlaying: { title: string; artist: string | null; album: string | null } | null;
+  nowPlaying: QueueEntry | null;
   badge: Badge | null;
   signal: SignalView | null;
   error: string | null;
+  /** Changes when the queue is replaced; refetch `playQueue` then. */
+  queueVersion: number;
 }
 
 export const getAppInfo = (): Promise<AppInfo> => invoke<AppInfo>("app_info");
@@ -111,8 +167,20 @@ export const cancelScan = (): Promise<void> => invoke("cancel_scan");
 export const libraryPage = (query: string, offset: number, limit: number): Promise<LibraryPage> =>
   invoke<LibraryPage>("library_page", { query, offset, limit });
 
-export const playFrom = (query: string, index: number): Promise<void> =>
-  invoke("play_from", { query, index });
+export const albumsPage = (offset: number, limit: number): Promise<Page<AlbumView>> =>
+  invoke<Page<AlbumView>>("albums_page", { offset, limit });
+export const artistsPage = (offset: number, limit: number): Promise<Page<ArtistView>> =>
+  invoke<Page<ArtistView>>("artists_page", { offset, limit });
+export const albumDetail = (id: string): Promise<AlbumDetail> =>
+  invoke<AlbumDetail>("album_detail", { id });
+export const artistDetail = (id: string): Promise<ArtistDetail> =>
+  invoke<ArtistDetail>("artist_detail", { id });
+
+/** Plays `context` from its row `index`. */
+export const play = (context: PlayContext, index: number): Promise<void> =>
+  invoke("play", { context, index });
+export const playQueue = (): Promise<QueueView> => invoke<QueueView>("play_queue");
+export const jumpTo = (index: number): Promise<void> => invoke("jump_to", { index });
 export const pause = (): Promise<void> => invoke("pause");
 export const resume = (): Promise<void> => invoke("resume");
 export const stop = (): Promise<void> => invoke("stop");

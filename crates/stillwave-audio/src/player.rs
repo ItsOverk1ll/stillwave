@@ -86,7 +86,8 @@ impl PlayerStatus {
 }
 
 enum Cmd {
-    Play(Vec<PathBuf>),
+    /// Queue, and the index to start at.
+    Play(Vec<PathBuf>, usize),
     Pause,
     Resume,
     Stop,
@@ -117,13 +118,20 @@ impl Player {
 
     /// Replaces the queue and starts playing from the first file.
     pub fn play(&self, queue: Vec<PathBuf>) {
+        self.play_at(queue, 0);
+    }
+
+    /// Replaces the queue and starts at `start` (for example a track picked from
+    /// the queue or from the middle of an album). Earlier entries stay in the
+    /// queue so the UI can still show them.
+    pub fn play_at(&self, queue: Vec<PathBuf>, start: usize) {
         // Mark the state now, not when the worker gets to it, so a caller that
         // checks the status straight after `play` never sees the old state.
         if let Ok(mut s) = self.status.lock() {
             s.state = PlayState::Playing;
             s.error = None;
         }
-        let _ = self.tx.send(Cmd::Play(queue));
+        let _ = self.tx.send(Cmd::Play(queue, start));
     }
     pub fn pause(&self) {
         let _ = self.tx.send(Cmd::Pause);
@@ -253,7 +261,7 @@ impl Worker {
     fn handle(&mut self, cmd: Cmd) -> bool {
         match cmd {
             Cmd::Shutdown => return false,
-            Cmd::Play(queue) => self.start(&queue),
+            Cmd::Play(queue, start) => self.start(&queue, start),
             Cmd::Stop => {
                 self.end(PlayState::Stopped, None);
             }
@@ -277,9 +285,13 @@ impl Worker {
         true
     }
 
-    fn start(&mut self, queue: &[PathBuf]) {
-        self.end(PlayState::Stopped, None);
-        let mut index = 0;
+    fn start(&mut self, queue: &[PathBuf], start: usize) {
+        // Drop whatever was playing without announcing "Stopped": a watcher would
+        // otherwise see a stop between two plays and think playback had ended.
+        if let Some(mut old) = self.playing.take() {
+            let _ = old.stream.flush();
+        }
+        let mut index = start;
         let mut first_problem: Option<String> = None;
         while index < queue.len() {
             match self.begin_track(queue, index, &mut None) {

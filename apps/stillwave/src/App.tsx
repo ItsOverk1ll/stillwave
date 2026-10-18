@@ -1,11 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-only
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api";
-import type { AppInfo, ScanFinished, ScanProgress, Settings } from "./api";
+import type { AppInfo, PlayContext, ScanFinished, ScanProgress, Settings } from "./api";
 import AudioSettings from "./AudioSettings";
+import { AlbumList, ArtistList } from "./Collections";
+import { plural } from "./format";
+import { AlbumPage, ArtistPage } from "./Pages";
 import PlayerBar from "./PlayerBar";
+import QueuePanel from "./QueuePanel";
 import TrackList from "./TrackList";
+import { currentItemId, usePlayer } from "./usePlayer";
 import "./styles.css";
+
+/** Where the main area is. Tabs are the top level; album and artist pages stack on them. */
+type Route =
+  | { kind: "songs" }
+  | { kind: "albums" }
+  | { kind: "artists" }
+  | { kind: "album"; id: string }
+  | { kind: "artist"; id: string };
+
+const TABS: { kind: "songs" | "albums" | "artists"; label: string }[] = [
+  { kind: "songs", label: "Songs" },
+  { kind: "albums", label: "Albums" },
+  { kind: "artists", label: "Artists" },
+];
 
 /** Wait this long after the last keystroke before searching. */
 const SEARCH_DELAY_MS = 120;
@@ -27,7 +46,13 @@ export default function App() {
   const [scan, setScan] = useState<ScanState>({ running: false, progress: null, result: null });
   const startedRescan = useRef(false);
   // What was last played, so it can be retried after changing audio settings.
-  const lastPlay = useRef<{ query: string; index: number } | null>(null);
+  const lastPlay = useRef<{ context: PlayContext; index: number } | null>(null);
+  // Navigation: the last entry is shown; Back pops it.
+  const [history, setHistory] = useState<Route[]>([{ kind: "songs" }]);
+  const route = history[history.length - 1] ?? { kind: "songs" };
+  const [queueOpen, setQueueOpen] = useState(false);
+  const player = usePlayer();
+  const currentId = currentItemId(player.view);
   // Bumped when settings change elsewhere so the settings panel reloads them.
   const [settingsKey, setSettingsKey] = useState(0);
 
@@ -117,15 +142,41 @@ export default function App() {
       .then(() => {
         setSettingsKey((k) => k + 1);
         const last = lastPlay.current;
-        return last ? api.playFrom(last.query, last.index) : undefined;
+        return last ? api.play(last.context, last.index) : undefined;
       })
       .catch((e: unknown) => {
         report(String(e));
       });
   };
 
+  const playFrom = useCallback(
+    (context: PlayContext, index: number) => {
+      lastPlay.current = { context, index };
+      api.play(context, index).catch((e: unknown) => {
+        report(String(e));
+      });
+    },
+    [report],
+  );
+  const open = useCallback((next: Route) => {
+    setHistory((h) => [...h, next]);
+  }, []);
+  const openArtist = useCallback(
+    (id: string) => {
+      open({ kind: "artist", id });
+    },
+    [open],
+  );
+  const openAlbum = useCallback(
+    (id: string) => {
+      open({ kind: "album", id });
+    },
+    [open],
+  );
+
   const folder = settings?.musicFolder ?? null;
   const hasLibrary = total !== null && total > 0;
+  const tab = route.kind === "album" || route.kind === "artist" ? null : route.kind;
 
   return (
     <div className="app">
@@ -196,41 +247,124 @@ export default function App() {
 
       {folder && (
         <main className="library">
-          <div className="searchbar">
-            <input
-              type="search"
-              aria-label="Search your library"
-              placeholder="Search title, artist or album"
-              value={typed}
-              onChange={(e) => {
-                setTyped(e.target.value);
-              }}
-            />
-            {total !== null && (
-              <span className="muted">
-                {query.trim() ? plural(total, "match", "matches") : plural(total, "track")}
-              </span>
+          <nav className="tabs" aria-label="Library sections">
+            {history.length > 1 && (
+              <button
+                type="button"
+                className="back"
+                onClick={() => {
+                  setHistory((h) => h.slice(0, -1));
+                }}
+              >
+                ← Back
+              </button>
             )}
-          </div>
-          {(hasLibrary || total === null || query.trim() !== "" || !scan.running) && (
-            <TrackList
-              key={`${query}\u0000${version.toString()}`}
-              query={query}
-              onTotal={setTotal}
+            {TABS.map((t) => (
+              <button
+                key={t.kind}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.kind}
+                className={tab === t.kind ? "tab active" : "tab"}
+                onClick={() => {
+                  setHistory([{ kind: t.kind }]);
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          {route.kind === "songs" && (
+            <>
+              <div className="searchbar">
+                <input
+                  type="search"
+                  aria-label="Search your library"
+                  placeholder="Search title, artist or album"
+                  value={typed}
+                  onChange={(e) => {
+                    setTyped(e.target.value);
+                  }}
+                />
+                {total !== null && (
+                  <span className="muted">
+                    {query.trim() ? plural(total, "match", "matches") : plural(total, "track")}
+                  </span>
+                )}
+              </div>
+              {(hasLibrary || total === null || query.trim() !== "" || !scan.running) && (
+                <TrackList
+                  key={`${query}\u0000${version.toString()}`}
+                  query={query}
+                  currentId={currentId}
+                  onTotal={setTotal}
+                  onError={report}
+                  onOpenArtist={openArtist}
+                  onOpenAlbum={openAlbum}
+                  onPlay={(index) => {
+                    playFrom({ kind: "library", query }, index);
+                  }}
+                />
+              )}
+            </>
+          )}
+          {route.kind === "albums" && (
+            <AlbumList key={version} onOpen={openAlbum} onError={report} />
+          )}
+          {route.kind === "artists" && (
+            <ArtistList key={version} onOpen={openArtist} onError={report} />
+          )}
+          {route.kind === "album" && (
+            <AlbumPage
+              key={`${route.id}-${version.toString()}`}
+              id={route.id}
+              currentId={currentId}
+              onPlay={playFrom}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
               onError={report}
-              onPlay={(index) => {
-                lastPlay.current = { query, index };
-                api.playFrom(query, index).catch((e: unknown) => {
-                  report(String(e));
-                });
-              }}
+            />
+          )}
+          {route.kind === "artist" && (
+            <ArtistPage
+              key={`${route.id}-${version.toString()}`}
+              id={route.id}
+              currentId={currentId}
+              onPlay={playFrom}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
+              onError={report}
             />
           )}
         </main>
       )}
 
+      {queueOpen && (
+        <QueuePanel
+          entries={player.queue}
+          current={player.view?.index ?? null}
+          onJump={(i) => {
+            api.jumpTo(i).catch((e: unknown) => {
+              report(String(e));
+            });
+          }}
+          onClose={() => {
+            setQueueOpen(false);
+          }}
+        />
+      )}
+
       <AudioSettings key={settingsKey} onError={report} />
-      <PlayerBar onError={report} onUseMixer={switchToMixer} />
+      <PlayerBar
+        view={player.view}
+        queueOpen={queueOpen}
+        onToggleQueue={() => {
+          setQueueOpen((o) => !o);
+        }}
+        onError={report}
+        onUseMixer={switchToMixer}
+      />
 
       <details className="about">
         <summary>About</summary>
@@ -252,11 +386,6 @@ export default function App() {
       </details>
     </div>
   );
-}
-
-/** 1 file, 2 files. Pass `many` for irregular plurals (match, matches). */
-function plural(n: number, noun: string, many = `${noun}s`): string {
-  return `${n.toLocaleString()} ${n === 1 ? noun : many}`;
 }
 
 function ScanStatus({ scan }: { scan: ScanState }) {

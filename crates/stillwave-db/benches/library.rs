@@ -67,6 +67,28 @@ fn bench(c: &mut Criterion) {
     g.bench_function("search_golden_count", |b| {
         b.iter(|| db.library_count("golden").unwrap());
     });
+    let albums = db.album_count().unwrap();
+    let artists = db.artist_count().unwrap();
+    eprintln!("albums: {albums}, artists: {artists}");
+    let deep_album = u32::try_from(albums.saturating_sub(100)).unwrap_or(0);
+    let deep_artist = u32::try_from(artists.saturating_sub(100)).unwrap_or(0);
+    g.bench_function("albums_page_100_at_0", |b| {
+        b.iter(|| db.albums_page(100, 0).unwrap());
+    });
+    g.bench_function("albums_page_100_at_end", |b| {
+        b.iter(|| db.albums_page(100, deep_album).unwrap());
+    });
+    g.bench_function("artists_page_100_at_end", |b| {
+        b.iter(|| db.artists_page(100, deep_artist).unwrap());
+    });
+    let some_album = db.albums_page(1, 0).unwrap().remove(0).id;
+    let some_artist = db.artists_page(1, 0).unwrap().remove(0).id;
+    g.bench_function("album_tracks", |b| {
+        b.iter(|| db.album_tracks(&some_album).unwrap());
+    });
+    g.bench_function("artist_albums", |b| {
+        b.iter(|| db.artist_albums(&some_artist).unwrap());
+    });
     g.finish();
 }
 

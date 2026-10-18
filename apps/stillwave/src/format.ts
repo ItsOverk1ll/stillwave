@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import type { Badge, SignalView, TrackRow } from "./api";
+import type { AlbumView, Badge, SignalView, TrackRow } from "./api";
 
 /** 187000 -> "3:07". */
 export function formatDuration(ms: number | null | undefined): string {
@@ -49,4 +49,20 @@ export function explainSignal(badge: Badge, s: SignalView): string[] {
   if (s.dithered) reasons.push("Dither is applied while reducing bit depth.");
   if (s.softwareVolume && s.exclusive) reasons.push("Volume is applied in software.");
   return reasons.length > 0 ? reasons : ["The output format differs from the file."];
+}
+
+/** 1 file, 2 files. Pass `many` for irregular plurals (match, matches). */
+export function plural(n: number, noun: string, many = `${noun}s`): string {
+  return `${n.toLocaleString()} ${n === 1 ? noun : many}`;
+}
+
+/** "FLAC 24/96" for an album (its best file), or "Mixed" when codecs differ. */
+export function albumQuality(a: AlbumView): string {
+  if (a.trackCount === 0) return "";
+  if (!a.codec) return "Mixed";
+  return formatQuality({
+    codec: a.codec,
+    bitDepth: a.maxBitDepth,
+    sampleRateHz: a.maxSampleRateHz,
+  });
 }

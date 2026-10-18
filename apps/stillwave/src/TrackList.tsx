@@ -1,144 +1,83 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback } from "react";
 import { libraryPage, type TrackRow } from "./api";
 import { formatDuration, formatQuality } from "./format";
+import VirtualList from "./VirtualList";
 
-/** Fixed row height lets the list place rows by arithmetic: 50,000 rows stay smooth. */
 export const ROW_HEIGHT = 52;
-const PAGE_SIZE = 100;
-const OVERSCAN = 6;
-/** Used when the browser reports no height yet (first paint, tests). */
-const FALLBACK_VIEWPORT = 600;
 
 interface Props {
-  /** Remount (change the React `key`) when the query or library changes: state starts fresh. */
+  /** Remount (change the React `key`) when the query or library changes. */
   query: string;
+  /** The item being heard, highlighted in the list. */
+  currentId: string | null;
   onPlay: (index: number) => void;
+  onOpenArtist: (id: string) => void;
+  onOpenAlbum: (id: string) => void;
   onTotal?: (total: number) => void;
   onError: (message: string) => void;
 }
 
-/**
- * A virtualised, paged list of the library. Only the rows near the viewport exist
- * in the DOM and only the pages they need are fetched from Rust.
- */
-export default function TrackList({ query, onPlay, onTotal, onError }: Props) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const [total, setTotal] = useState<number | null>(null);
-  const [pages, setPages] = useState<ReadonlyMap<number, TrackRow[]>>(new Map());
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewport, setViewport] = useState(FALLBACK_VIEWPORT);
-  const mounted = useRef(true);
-  const inFlight = useRef(new Set<number>());
-
+/** The songs list: every track, or the tracks matching a search. */
+export default function TrackList({
+  query,
+  currentId,
+  onPlay,
+  onOpenArtist,
+  onOpenAlbum,
+  onTotal,
+  onError,
+}: Props) {
   const fetchPage = useCallback(
-    (page: number) => {
-      if (inFlight.current.has(page)) return;
-      inFlight.current.add(page);
-      libraryPage(query, page * PAGE_SIZE, PAGE_SIZE).then(
-        (result) => {
-          if (!mounted.current) return;
-          inFlight.current.delete(page);
-          setTotal(result.total);
-          onTotal?.(result.total);
-          setPages((prev) => new Map(prev).set(page, result.rows));
-        },
-        (err: unknown) => {
-          if (!mounted.current) return;
-          inFlight.current.delete(page);
-          onError(String(err));
-        },
-      );
-    },
-    [query, onTotal, onError],
+    (offset: number, limit: number) => libraryPage(query, offset, limit),
+    [query],
   );
-
-  // The first page also tells us the total.
-  useEffect(() => {
-    mounted.current = true;
-    fetchPage(0);
-    return () => {
-      mounted.current = false;
-    };
-  }, [fetchPage]);
-
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => {
-      setViewport(el.clientHeight || FALLBACK_VIEWPORT);
-    });
-    ro.observe(el); // reports the size straight away
-    return () => {
-      ro.disconnect();
-    };
-  }, []);
-
-  const count = total ?? 0;
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const last = Math.min(count - 1, Math.ceil((scrollTop + viewport) / ROW_HEIGHT) + OVERSCAN);
-
-  // Fetch whichever pages the visible rows live in.
-  useEffect(() => {
-    if (total == null) return;
-    for (
-      let p = Math.floor(first / PAGE_SIZE);
-      p <= Math.floor(Math.max(first, last) / PAGE_SIZE);
-      p++
-    ) {
-      if (!pages.has(p) && last >= first) fetchPage(p);
-    }
-  }, [first, last, total, pages, fetchPage]);
-
-  if (total === 0) {
-    return (
-      <p className="empty" role="status">
-        {query.trim() ? "No tracks match your search." : "No tracks yet."}
-      </p>
-    );
-  }
-
-  const rows: React.ReactNode[] = [];
-  for (let i = first; i <= last; i++) {
-    const track = pages.get(Math.floor(i / PAGE_SIZE))?.[i % PAGE_SIZE];
-    rows.push(
-      <li
-        key={i}
-        className={track ? "row" : "row loading"}
-        style={{ top: i * ROW_HEIGHT, height: ROW_HEIGHT }}
-        onDoubleClick={() => {
-          if (track?.playable) onPlay(i);
-        }}
-      >
-        {track ? (
-          <Row
-            track={track}
-            onPlay={() => {
-              onPlay(i);
-            }}
-          />
-        ) : null}
-      </li>,
-    );
-  }
-
   return (
-    <div
-      className="scroller"
-      ref={scroller}
-      onScroll={(e) => {
-        setScrollTop(e.currentTarget.scrollTop);
+    <VirtualList<TrackRow>
+      fetchPage={fetchPage}
+      rowHeight={ROW_HEIGHT}
+      label="Library"
+      empty={query.trim() ? "No tracks match your search." : "No tracks yet."}
+      onTotal={onTotal}
+      onError={onError}
+      rowClass={(t) => (t.id === currentId ? "current" : undefined)}
+      onActivate={(t, i) => {
+        if (t.playable) onPlay(i);
       }}
-    >
-      <ul className="rows" aria-label="Library" style={{ height: count * ROW_HEIGHT }}>
-        {rows}
-      </ul>
-    </div>
+      renderRow={(t, i) => (
+        <TrackRowView
+          track={t}
+          current={t.id === currentId}
+          onPlay={() => {
+            onPlay(i);
+          }}
+          onOpenArtist={onOpenArtist}
+          onOpenAlbum={onOpenAlbum}
+        />
+      )}
+    />
   );
 }
 
-function Row({ track, onPlay }: { track: TrackRow; onPlay: () => void }) {
-  const sub = [track.artist, track.album].filter(Boolean).join(" · ");
+interface RowProps {
+  track: TrackRow;
+  current: boolean;
+  onPlay: () => void;
+  onOpenArtist?: (id: string) => void;
+  onOpenAlbum?: (id: string) => void;
+  /** Album pages show the track number instead of the album name. */
+  showNumber?: boolean;
+}
+
+/** One track row; shared by the songs list, album pages and artist pages. */
+export function TrackRowView({
+  track,
+  current,
+  onPlay,
+  onOpenArtist,
+  onOpenAlbum,
+  showNumber = false,
+}: RowProps) {
   const quality = formatQuality(track);
   return (
     <>
@@ -150,14 +89,52 @@ function Row({ track, onPlay }: { track: TrackRow; onPlay: () => void }) {
         title={track.playable ? "Play from here" : "File not found on this device"}
         onClick={onPlay}
       >
-        ▶
+        {current ? "♫" : showNumber && track.trackNumber != null ? track.trackNumber : "▶"}
       </button>
       <div className="meta">
-        <div className="title">{track.title}</div>
-        <div className="sub">{track.playable ? sub : `${sub} · file missing`}</div>
+        <div className="title" aria-current={current ? "true" : undefined}>
+          {track.title}
+          {current && <span className="sr-only"> (now playing)</span>}
+        </div>
+        <div className="sub">
+          <Link id={track.artistId} text={track.artist} onOpen={onOpenArtist} />
+          {track.album && !showNumber && (
+            <>
+              {track.artist ? " · " : ""}
+              <Link id={track.albumId} text={track.album} onOpen={onOpenAlbum} />
+            </>
+          )}
+          {!track.playable && " · file missing"}
+        </div>
       </div>
       {quality && <span className="chip">{quality}</span>}
       <span className="time">{formatDuration(track.durationMs)}</span>
     </>
+  );
+}
+
+/** A name that opens its page when there is one to open. */
+function Link({
+  id,
+  text,
+  onOpen,
+}: {
+  id: string | null;
+  text: string | null;
+  onOpen?: (id: string) => void;
+}) {
+  if (!text) return null;
+  if (!id || !onOpen) return <span>{text}</span>;
+  return (
+    <button
+      type="button"
+      className="link"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(id);
+      }}
+    >
+      {text}
+    </button>
   );
 }

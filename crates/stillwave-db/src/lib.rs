@@ -9,4 +9,7 @@ mod repo;
 
 pub use error::DbError;
 pub use migrations::{current_version, latest_version, migrate};
-pub use repo::{Db, FileFacts, ImportCounts, LibraryRow, StoredFile, TrackImport};
+pub use repo::{
+    AlbumRow, ArtistAlbum, ArtistRow, Db, FileFacts, ImportCounts, LibraryRow, StoredFile,
+    TrackImport,
+};

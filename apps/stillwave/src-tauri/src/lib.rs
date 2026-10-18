@@ -5,6 +5,7 @@
 //! thread, and the database lock is held only for one query or one import batch
 //! at a time, so the UI stays responsive during a scan.
 
+mod browse;
 mod playback;
 
 use std::collections::HashMap;
@@ -12,9 +13,9 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use stillwave_audio::Player;
-use stillwave_db::{Db, DbError, ImportCounts, LibraryRow, StoredFile, TrackImport};
+use stillwave_db::{Db, DbError, ImportCounts, StoredFile, TrackImport};
 use stillwave_library::{scan, LibraryStore, ScanOptions, ScanProgress};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -22,10 +23,12 @@ use playback::{AudioDevice, AudioMode, PlayerView, QueueEntry};
 
 /// Most tracks queued when the user presses play on a row.
 const MAX_QUEUE: u32 = 1000;
+/// Most tracks queued when playing an artist.
+const MAX_ARTIST_QUEUE: u32 = 2000;
 
 type SharedDb = Arc<Mutex<Db>>;
 
-struct AppState {
+pub(crate) struct AppState {
     db: SharedDb,
     scan_cancel: Mutex<Option<Arc<AtomicBool>>>,
     playback: Mutex<Playback>,
@@ -34,7 +37,11 @@ struct AppState {
 #[derive(Default)]
 struct Playback {
     player: Option<Player>,
+    /// What the UI shows for each queue entry, and the file each one plays.
     queue: Vec<QueueEntry>,
+    paths: Vec<PathBuf>,
+    /// Bumped every time the queue is replaced.
+    version: u64,
 }
 
 fn lock<T>(m: &Mutex<T>) -> Result<MutexGuard<'_, T>, String> {
@@ -78,7 +85,7 @@ struct AppInfo {
 }
 
 /// Runs `f` with the database on a blocking thread.
-async fn with_db<T: Send + 'static>(
+pub(crate) async fn with_db<T: Send + 'static>(
     state: &State<'_, AppState>,
     f: impl FnOnce(&Db) -> Result<T, DbError> + Send + 'static,
 ) -> Result<T, String> {
@@ -258,6 +265,8 @@ async fn start_scan(
                 Ok(r) => {
                     if let Ok(db) = db.lock() {
                         let _ = db.set_setting("music_folder", &remember);
+                        // New rows change the best query plans; keep statistics fresh.
+                        let _ = db.optimize();
                     }
                     ScanFinishedEvent {
                         found: r.found,
@@ -307,90 +316,56 @@ fn cancel_scan(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-// ---- library ----------------------------------------------------------------
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TrackRow {
-    id: String,
-    title: String,
-    artist: Option<String>,
-    album: Option<String>,
-    track_number: Option<u32>,
-    duration_ms: Option<u64>,
-    codec: Option<String>,
-    sample_rate_hz: Option<u32>,
-    bit_depth: Option<u8>,
-    /// False when the file has gone missing from this device.
-    playable: bool,
-}
-
-impl From<LibraryRow> for TrackRow {
-    fn from(r: LibraryRow) -> Self {
-        Self {
-            id: r.item_id,
-            title: r.title,
-            artist: r.artist,
-            album: r.album,
-            track_number: r.track_number,
-            duration_ms: r.duration_ms,
-            codec: r.codec,
-            sample_rate_hz: r.sample_rate_hz,
-            bit_depth: r.bit_depth,
-            playable: r.path.is_some(),
-        }
-    }
-}
-
-#[derive(Serialize)]
-struct LibraryPage {
-    rows: Vec<TrackRow>,
-    total: u64,
-}
-
-/// One page of the library, filtered by search `query` (empty = everything).
-#[tauri::command]
-async fn library_page(
-    state: State<'_, AppState>,
-    query: String,
-    offset: u32,
-    limit: u32,
-) -> Result<LibraryPage, String> {
-    with_db(&state, move |db| {
-        Ok(LibraryPage {
-            total: db.library_count(&query)?,
-            rows: db
-                .library_rows(&query, limit, offset)?
-                .into_iter()
-                .map(TrackRow::from)
-                .collect(),
-        })
-    })
-    .await
-}
-
 // ---- playback ---------------------------------------------------------------
 
-/// Plays the current list (same `query`) starting at row `index`.
+/// Where a play started from; decides what goes in the queue.
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum PlayContext {
+    /// The songs list, as filtered by `query`. The queue runs from the chosen row
+    /// to the end of the list (capped).
+    Library { query: String },
+    /// A whole album, in track order.
+    Album { id: String },
+    /// Every track by an artist, in library order.
+    Artist { id: String },
+}
+
+/// Plays `context` starting at its row `index`.
 #[tauri::command]
-async fn play_from(state: State<'_, AppState>, query: String, index: u32) -> Result<(), String> {
-    let (settings, rows) = with_db(&state, move |db| {
-        Ok((
-            read_settings(db)?,
-            db.library_rows(&query, MAX_QUEUE, index)?,
-        ))
+async fn play(state: State<'_, AppState>, context: PlayContext, index: u32) -> Result<(), String> {
+    let (settings, rows, start) = with_db(&state, move |db| {
+        let settings = read_settings(db)?;
+        Ok(match context {
+            PlayContext::Library { query } => {
+                (settings, db.library_rows(&query, MAX_QUEUE, index)?, 0)
+            }
+            PlayContext::Album { id } => (settings, db.album_tracks(&id)?, index),
+            PlayContext::Artist { id } => {
+                (settings, db.artist_tracks(&id, MAX_ARTIST_QUEUE)?, index)
+            }
+        })
     })
     .await?;
+
+    // Missing files cannot play. Keep the chosen track's position correct when
+    // some rows before it are dropped.
+    let chosen = rows.get(start as usize).map(|r| r.item_id.clone());
     let playable: Vec<_> = rows.into_iter().filter(|r| r.path.is_some()).collect();
     if playable.is_empty() {
         return Err("Nothing playable here: the files are missing from this device.".into());
     }
+    let start = chosen
+        .and_then(|id| playable.iter().position(|r| r.item_id == id))
+        .unwrap_or(0);
     let queue: Vec<QueueEntry> = playable
         .iter()
         .map(|r| QueueEntry {
+            item_id: r.item_id.clone(),
             title: r.title.clone(),
             artist: r.artist.clone(),
             album: r.album.clone(),
+            duration_ms: r.duration_ms,
         })
         .collect();
     let paths: Vec<PathBuf> = playable
@@ -408,8 +383,39 @@ async fn play_from(state: State<'_, AppState>, query: String, index: u32) -> Res
         )?);
     }
     pb.queue = queue;
+    pb.paths.clone_from(&paths);
+    pb.version += 1;
     if let Some(p) = &pb.player {
-        p.play(paths);
+        p.play_at(paths, start);
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct QueueView {
+    /// Changes whenever the queue is replaced; the UI refetches when it does.
+    version: u64,
+    entries: Vec<QueueEntry>,
+}
+
+#[tauri::command]
+fn play_queue(state: State<'_, AppState>) -> Result<QueueView, String> {
+    let pb = lock(&state.playback)?;
+    Ok(QueueView {
+        version: pb.version,
+        entries: pb.queue.clone(),
+    })
+}
+
+/// Jumps to entry `index` of the current queue.
+#[tauri::command]
+fn jump_to(state: State<'_, AppState>, index: usize) -> Result<(), String> {
+    let pb = lock(&state.playback)?;
+    if index >= pb.paths.len() {
+        return Err("That queue entry no longer exists.".into());
+    }
+    if let Some(p) = &pb.player {
+        p.play_at(pb.paths.clone(), index);
     }
     Ok(())
 }
@@ -456,7 +462,7 @@ fn seek(state: State<'_, AppState>, position_ms: u64) -> Result<(), String> {
 fn player_status(state: State<'_, AppState>) -> Result<PlayerView, String> {
     let pb = lock(&state.playback)?;
     Ok(pb.player.as_ref().map_or_else(PlayerView::idle, |p| {
-        PlayerView::from_status(&p.status(), &pb.queue)
+        PlayerView::from_status(&p.status(), &pb.queue, pb.version)
     }))
 }
 
@@ -488,8 +494,14 @@ pub fn run() {
             set_audio_options,
             start_scan,
             cancel_scan,
-            library_page,
-            play_from,
+            browse::library_page,
+            browse::albums_page,
+            browse::album_detail,
+            browse::artists_page,
+            browse::artist_detail,
+            play,
+            play_queue,
+            jump_to,
             pause,
             resume,
             stop,

@@ -426,3 +426,204 @@ button.primary {
     grid-column: 1 / -1;
   }
 }
+
+/* ---- navigation ---------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tab {
+  background: transparent;
+  border-color: transparent;
+}
+
+.tab.active {
+  background: var(--surface);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.back {
+  margin-right: 0.5rem;
+}
+
+/* A name that opens its page; looks like text until hovered. */
+.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.row-button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+}
+
+.row-button .meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---- now playing --------------------------------------------------------- */
+
+.row.current {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.row.current .title {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* ---- album and artist pages ---------------------------------------------- */
+
+.detail {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.detail-head > div {
+  flex: 1;
+  min-width: 12rem;
+}
+
+.detail-head h2 {
+  margin: 0 0 0.25rem;
+}
+
+.detail-head .sub {
+  margin: 0;
+}
+
+.detail h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.tracklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row.static {
+  position: static;
+  min-height: 52px;
+}
+
+/* ---- queue --------------------------------------------------------------- */
+
+.queue {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: 6.5rem;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: min(32rem, 60vh);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+}
+
+.queue header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.queue h2 {
+  margin: 0;
+  font-size: 1rem;
+  flex: 1;
+}
+
+.queue ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.queue li button {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+}
+
+.queue li button:hover {
+  background: var(--surface-2);
+}
+
+.queue li .meta {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.queue li.current button {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.queue li.current .title {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.queue li.played {
+  opacity: 0.6;
+}

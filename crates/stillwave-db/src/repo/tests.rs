@@ -84,6 +84,11 @@ fn migrated_schema_matches_expected_objects() {
         "idx_artists_name",
         "idx_albums_title",
         "idx_media_items_sort",
+        "idx_albums_artist",
+        "idx_albums_sort",
+        "albums_sort_ai",
+        "albums_sort_au",
+        "artists_sort_au",
     ]
     .into_iter()
     .map(String::from)
@@ -516,4 +521,239 @@ fn item_path_finds_the_file_on_this_device() {
     assert_eq!(db.item_path(item).unwrap().as_deref(), Some("/m/a.flac"));
     db.remove_files(&["/m/a.flac".into()]).unwrap();
     assert_eq!(db.item_path(item).unwrap(), None);
+}
+
+#[allow(clippy::too_many_arguments)] // a test fixture: one argument per tag
+fn tagged(
+    path: &str,
+    title: &str,
+    artist: &str,
+    album_artist: Option<&str>,
+    album: &str,
+    disc: u32,
+    n: u32,
+    codec: &str,
+    rate: u32,
+    bits: u8,
+) -> TrackImport {
+    let mut t = track(path, title, artist, album);
+    t.album_artist = album_artist.map(String::from);
+    t.disc_number = Some(disc);
+    t.track_number = Some(n);
+    t.file.codec = codec.into();
+    t.file.sample_rate_hz = rate;
+    t.file.bit_depth = Some(bits);
+    t.file.duration_ms = 100_000;
+    t
+}
+
+fn browse_fixture() -> Db {
+    let mut db = Db::open_in_memory().unwrap();
+    db.import_tracks(&[
+        tagged(
+            "/m/b2.flac",
+            "B two",
+            "Beta",
+            None,
+            "Beta Album",
+            1,
+            2,
+            "flac",
+            96_000,
+            24,
+        ),
+        tagged(
+            "/m/b1.flac",
+            "B one",
+            "Beta",
+            None,
+            "Beta Album",
+            1,
+            1,
+            "flac",
+            44_100,
+            16,
+        ),
+        tagged(
+            "/m/b3.flac",
+            "B disc two",
+            "Beta",
+            None,
+            "Beta Album",
+            2,
+            1,
+            "flac",
+            44_100,
+            16,
+        ),
+        tagged(
+            "/m/a1.mp3",
+            "A one",
+            "Alpha",
+            None,
+            "Alpha Album",
+            1,
+            1,
+            "mp3",
+            44_100,
+            16,
+        ),
+        tagged(
+            "/m/a2.flac",
+            "A two",
+            "Alpha",
+            None,
+            "Alpha Album",
+            1,
+            2,
+            "flac",
+            44_100,
+            16,
+        ),
+        tagged(
+            "/m/v1.flac",
+            "Comp by Beta",
+            "Beta",
+            Some("Various Artists"),
+            "Hits",
+            1,
+            1,
+            "flac",
+            44_100,
+            16,
+        ),
+        tagged(
+            "/m/v2.flac",
+            "Comp by Gamma",
+            "Gamma",
+            Some("Various Artists"),
+            "Hits",
+            1,
+            2,
+            "flac",
+            44_100,
+            16,
+        ),
+    ])
+    .unwrap();
+    db
+}
+
+#[test]
+fn albums_are_listed_by_artist_with_counts_and_quality() {
+    let db = browse_fixture();
+    assert_eq!(db.album_count().unwrap(), 3);
+    let albums = db.albums_page(10, 0).unwrap();
+    let names: Vec<_> = albums
+        .iter()
+        .map(|a| (a.artist.clone().unwrap(), a.title.clone()))
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("Alpha".into(), "Alpha Album".into()),
+            ("Beta".into(), "Beta Album".into()),
+            ("Various Artists".into(), "Hits".into())
+        ]
+    );
+    let beta = &albums[1];
+    assert_eq!((beta.track_count, beta.duration_ms), (3, 300_000));
+    assert_eq!(beta.codec.as_deref(), Some("flac"));
+    assert_eq!(
+        (beta.max_sample_rate_hz, beta.max_bit_depth),
+        (Some(96_000), Some(24))
+    );
+    assert_eq!(
+        albums[0].codec, None,
+        "mixed MP3 and FLAC has no single codec"
+    );
+    // Paging and lookup by ID.
+    assert_eq!(db.albums_page(1, 1).unwrap()[0].id, beta.id);
+    assert_eq!(db.album(&beta.id).unwrap().unwrap().title, "Beta Album");
+}
+
+#[test]
+fn album_tracks_are_in_disc_then_track_order() {
+    let db = browse_fixture();
+    let beta = db
+        .albums_page(10, 0)
+        .unwrap()
+        .into_iter()
+        .find(|a| a.title == "Beta Album")
+        .unwrap();
+    let titles: Vec<_> = db
+        .album_tracks(&beta.id)
+        .unwrap()
+        .into_iter()
+        .map(|t| t.title)
+        .collect();
+    assert_eq!(titles, ["B one", "B two", "B disc two"]);
+}
+
+#[test]
+fn artists_list_counts_and_their_pages_include_appearances() {
+    let db = browse_fixture();
+    let artists = db.artists_page(10, 0).unwrap();
+    let names: Vec<_> = artists.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["Alpha", "Beta", "Gamma", "Various Artists"]);
+    assert_eq!(db.artist_count().unwrap(), 4);
+    let beta = &artists[1];
+    assert_eq!((beta.album_count, beta.track_count), (1, 4));
+
+    let albums = db.artist_albums(&beta.id).unwrap();
+    let shown: Vec<_> = albums
+        .iter()
+        .map(|a| (a.album.title.as_str(), a.appears_on))
+        .collect();
+    assert_eq!(shown, [("Beta Album", false), ("Hits", true)]);
+
+    let tracks = db.artist_tracks(&beta.id, 100).unwrap();
+    assert_eq!(tracks.len(), 4);
+    assert!(tracks
+        .iter()
+        .all(|t| t.artist_id.as_deref() == Some(beta.id.as_str())));
+    assert_eq!(db.artist(&beta.id).unwrap().unwrap().name, "Beta");
+}
+
+#[test]
+fn library_rows_carry_links_to_their_artist_and_album() {
+    let db = browse_fixture();
+    let row = db.library_rows("b one", 1, 0).unwrap().remove(0);
+    let album = db.album(row.album_id.as_deref().unwrap()).unwrap().unwrap();
+    let artist = db
+        .artist(row.artist_id.as_deref().unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (album.title.as_str(), artist.name.as_str()),
+        ("Beta Album", "Beta")
+    );
+}
+
+#[test]
+fn unknown_and_malformed_ids_are_handled() {
+    let db = browse_fixture();
+    let unknown = stillwave_core::AlbumId::new().to_string();
+    assert_eq!(db.album(&unknown).unwrap(), None);
+    assert!(db.album_tracks(&unknown).unwrap().is_empty());
+    assert!(db.album("not-an-id").is_err());
+    assert!(db.artist("'; DROP TABLE artists; --").is_err());
+}
+
+#[test]
+fn album_order_follows_artist_renames() {
+    let db = browse_fixture();
+    let alpha = db.artists_page(10, 0).unwrap().remove(0);
+    assert_eq!(db.albums_page(1, 0).unwrap()[0].title, "Alpha Album");
+    db.conn
+        .execute("UPDATE artists SET name = 'Zulu' WHERE name = 'Alpha'", [])
+        .unwrap();
+    let titles: Vec<_> = db
+        .albums_page(10, 0)
+        .unwrap()
+        .into_iter()
+        .map(|a| a.title)
+        .collect();
+    assert_eq!(titles.last().map(String::as_str), Some("Alpha Album"));
+    assert_eq!(db.artist(&alpha.id).unwrap().unwrap().name, "Zulu");
 }

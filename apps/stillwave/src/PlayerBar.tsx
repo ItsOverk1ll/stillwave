@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import * as api from "./api";
 import type { PlayerView } from "./api";
 import { BADGE_LABEL, explainSignal, formatDuration } from "./format";
 
-const POLL_MS = 250;
-
 interface Props {
+  /** Current playback status (polled by the caller). */
+  view: PlayerView | null;
+  queueOpen?: boolean;
+  onToggleQueue?: () => void;
   onError: (message: string) => void;
   /** Offered when a device refused exclusive mode: switch to mixer fallback and retry. */
   onUseMixer?: () => void;
@@ -18,29 +20,10 @@ export function isExclusiveRefusal(error: string | null): boolean {
 }
 
 /** Now-playing bar: transport controls, position, and the signal-path badge. */
-export default function PlayerBar({ onError, onUseMixer }: Props) {
-  const [view, setView] = useState<PlayerView | null>(null);
+export default function PlayerBar({ view, queueOpen, onToggleQueue, onError, onUseMixer }: Props) {
   // While the user drags the slider we show their value, not the live position.
   const [dragMs, setDragMs] = useState<number | null>(null);
   const [showPath, setShowPath] = useState(false);
-
-  useEffect(() => {
-    let alive = true;
-    const tick = () => {
-      api.playerStatus().then(
-        (v) => {
-          if (alive) setView(v);
-        },
-        () => undefined,
-      );
-    };
-    tick();
-    const id = setInterval(tick, POLL_MS);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, []);
 
   const run = (p: Promise<unknown>) => {
     p.catch((e: unknown) => {
@@ -124,6 +107,16 @@ export default function PlayerBar({ onError, onUseMixer }: Props) {
         >
           ⏭
         </button>
+        {onToggleQueue && (
+          <button
+            type="button"
+            aria-label="Queue"
+            aria-pressed={queueOpen ?? false}
+            onClick={onToggleQueue}
+          >
+            ☰
+          </button>
+        )}
       </div>
 
       <div className="seek">
