@@ -135,6 +135,50 @@ describe("PlayerBar", () => {
   });
 });
 
+describe("PlayerBar errors", () => {
+  const refused = (error: string): PlayerView => ({
+    state: "error",
+    index: null,
+    positionMs: 0,
+    durationMs: null,
+    nowPlaying: null,
+    badge: null,
+    signal: null,
+    error,
+  });
+
+  it("shows why nothing played, without a fake 'Unknown track'", async () => {
+    mocked.playerStatus.mockResolvedValue(
+      refused(
+        "Nothing could be played. Speakers (PRO X 2 LIGHTSPEED): this device does not accept 24-bit / 44.1 kHz / 2 ch in exclusive mode",
+      ),
+    );
+    render(<PlayerBar onError={vi.fn()} onUseMixer={vi.fn()} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("PRO X 2");
+    expect(screen.queryByText("Unknown track")).toBeNull();
+    expect(screen.getByText("Playback stopped.")).toBeTruthy();
+  });
+
+  it("offers the mixer when a device refuses exclusive mode", async () => {
+    const onUseMixer = vi.fn();
+    mocked.playerStatus.mockResolvedValue(
+      refused(
+        "Nothing could be played. X: this device does not accept 24-bit / 96 kHz / 2 ch in exclusive mode",
+      ),
+    );
+    render(<PlayerBar onError={vi.fn()} onUseMixer={onUseMixer} />);
+    fireEvent.click(await screen.findByRole("button", { name: /use the windows mixer/i }));
+    expect(onUseMixer).toHaveBeenCalled();
+  });
+
+  it("does not offer the mixer for unrelated errors", async () => {
+    mocked.playerStatus.mockResolvedValue(refused("Nothing could be played. file is corrupt"));
+    render(<PlayerBar onError={vi.fn()} onUseMixer={vi.fn()} />);
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: /use the windows mixer/i })).toBeNull();
+  });
+});
+
 describe("AudioSettings", () => {
   beforeEach(() => {
     mocked.getSettings.mockResolvedValue({

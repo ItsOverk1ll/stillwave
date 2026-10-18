@@ -346,6 +346,18 @@ button.primary {
   padding-left: 1.1rem;
 }
 
+.player.idle {
+  flex-wrap: wrap;
+}
+
+.fix {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  width: 100%;
+}
+
 .error {
   grid-column: 1 / -1;
   color: var(--danger);

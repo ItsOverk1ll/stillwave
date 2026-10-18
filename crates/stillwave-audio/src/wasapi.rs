@@ -363,7 +363,14 @@ impl WasapiStream {
             .map_err(|e| AudioError::Device(format!("render thread: {e}")))?;
         let opened = rx
             .recv_timeout(Duration::from_secs(10))
-            .map_err(|_| AudioError::Device("device did not open in time".into()))??;
+            .map_err(|_| AudioError::Device("device did not open in time".into()))?
+            .map_err(|e| match e {
+                // Say which device refused, so the user knows what to change.
+                AudioError::Unsupported(m) => {
+                    AudioError::Unsupported(format!("{}: {m}", device.friendly_name))
+                }
+                other => other,
+            })?;
         Ok(Self {
             producer,
             pushed: 0,
@@ -574,7 +581,7 @@ fn setup(
         OutputMode::Exclusive => {
             let (c, w) = negotiate_exclusive(&client, format).ok_or_else(|| {
                 AudioError::Unsupported(format!(
-                    "{format} is not supported by this device in exclusive mode (no resampling is done)"
+                    "this device does not accept {format} in exclusive mode, and Stillwave never converts audio without asking"
                 ))
             })?;
             (sharemode, container, exclusive, wfx) = (AUDCLNT_SHAREMODE_EXCLUSIVE, c, true, w);

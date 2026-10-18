@@ -391,7 +391,14 @@ fn exclusive_refusal_is_an_error_unless_shared_fallback_is_allowed() {
     let strict = rig(true, false, false);
     strict.player.play(vec![f.clone()]);
     assert!(strict.player.wait_until_idle(WAIT));
-    assert_eq!(strict.player.status().state, PlayState::Error);
+    let st = strict.player.status();
+    assert_eq!(st.state, PlayState::Error);
+    // The user must see the real reason, not just "nothing could be played".
+    let msg = st.error.unwrap_or_default();
+    assert!(
+        msg.contains("Nothing could be played") && msg.contains("mock refuses exclusive"),
+        "{msg}"
+    );
     assert!(
         streams().is_empty(),
         "nothing may play through the mixer unasked"

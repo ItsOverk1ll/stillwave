@@ -214,6 +214,28 @@ describe("library", () => {
     expect(screen.getByText(/file missing/)).toBeTruthy();
   });
 
+  it("switches to mixer fallback and retries the same play when a device refuses", async () => {
+    mocked.playerStatus.mockResolvedValue({
+      state: "error",
+      index: null,
+      positionMs: 0,
+      durationMs: null,
+      nowPlaying: null,
+      badge: null,
+      signal: null,
+      error:
+        "Nothing could be played. Headset: this device does not accept 24-bit / 44.1 kHz / 2 ch in exclusive mode",
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Play Song 2" }));
+    fireEvent.click(await screen.findByRole("button", { name: /use the windows mixer/i }));
+    await waitFor(() => {
+      expect(mocked.setAudioOptions).toHaveBeenCalledWith("exclusive_fallback", null);
+      expect(mocked.playFrom).toHaveBeenCalledTimes(2);
+    });
+    expect(mocked.playFrom).toHaveBeenLastCalledWith("", 1);
+  });
+
   it("explains a playback failure instead of failing silently", async () => {
     mocked.playFrom.mockRejectedValue(
       "The device does not support 24-bit / 96 kHz in exclusive mode",

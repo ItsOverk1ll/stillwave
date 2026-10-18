@@ -26,6 +26,10 @@ export default function App() {
   const [total, setTotal] = useState<number | null>(null);
   const [scan, setScan] = useState<ScanState>({ running: false, progress: null, result: null });
   const startedRescan = useRef(false);
+  // What was last played, so it can be retried after changing audio settings.
+  const lastPlay = useRef<{ query: string; index: number } | null>(null);
+  // Bumped when settings change elsewhere so the settings panel reloads them.
+  const [settingsKey, setSettingsKey] = useState(0);
 
   const report = useCallback((message: string) => {
     setError(message);
@@ -103,6 +107,21 @@ export default function App() {
         report(String(e));
       },
     );
+  };
+
+  // The device refused exclusive mode: allow the mixer for it and try again.
+  const switchToMixer = () => {
+    api
+      .getSettings()
+      .then((s) => api.setAudioOptions("exclusive_fallback", s.audioDeviceId))
+      .then(() => {
+        setSettingsKey((k) => k + 1);
+        const last = lastPlay.current;
+        return last ? api.playFrom(last.query, last.index) : undefined;
+      })
+      .catch((e: unknown) => {
+        report(String(e));
+      });
   };
 
   const folder = settings?.musicFolder ?? null;
@@ -200,6 +219,7 @@ export default function App() {
               onTotal={setTotal}
               onError={report}
               onPlay={(index) => {
+                lastPlay.current = { query, index };
                 api.playFrom(query, index).catch((e: unknown) => {
                   report(String(e));
                 });
@@ -209,8 +229,8 @@ export default function App() {
         </main>
       )}
 
-      <AudioSettings onError={report} />
-      <PlayerBar onError={report} />
+      <AudioSettings key={settingsKey} onError={report} />
+      <PlayerBar onError={report} onUseMixer={switchToMixer} />
 
       <details className="about">
         <summary>About</summary>

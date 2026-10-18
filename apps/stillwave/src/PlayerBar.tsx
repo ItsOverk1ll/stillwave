@@ -8,10 +8,17 @@ const POLL_MS = 250;
 
 interface Props {
   onError: (message: string) => void;
+  /** Offered when a device refused exclusive mode: switch to mixer fallback and retry. */
+  onUseMixer?: () => void;
+}
+
+/** True for the error a device gives when it will not take the format in exclusive mode. */
+export function isExclusiveRefusal(error: string | null): boolean {
+  return error != null && /in exclusive mode/i.test(error);
 }
 
 /** Now-playing bar: transport controls, position, and the signal-path badge. */
-export default function PlayerBar({ onError }: Props) {
+export default function PlayerBar({ onError, onUseMixer }: Props) {
   const [view, setView] = useState<PlayerView | null>(null);
   // While the user drags the slider we show their value, not the live position.
   const [dragMs, setDragMs] = useState<number | null>(null);
@@ -41,16 +48,37 @@ export default function PlayerBar({ onError }: Props) {
     });
   };
 
-  if (!view || view.state === "stopped" || view.state === "finished") {
+  const nothingLoaded =
+    !view ||
+    view.state === "stopped" ||
+    view.state === "finished" ||
+    (view.state === "error" && !view.nowPlaying);
+  if (nothingLoaded) {
+    const error = view?.error ?? null;
     return (
       <footer className="player idle" aria-label="Player">
         <span className="muted">
-          {view?.state === "finished" ? "Finished." : "Nothing playing."}
+          {view?.state === "finished"
+            ? "Finished."
+            : view?.state === "error"
+              ? "Playback stopped."
+              : "Nothing playing."}
         </span>
-        {view?.error && (
+        {error && (
           <span role="alert" className="error">
-            {view.error}
+            {error}
           </span>
+        )}
+        {onUseMixer && isExclusiveRefusal(error) && (
+          <div className="fix">
+            <button type="button" onClick={onUseMixer}>
+              Use the Windows mixer when a device refuses
+            </button>
+            <span className="muted">
+              It will play, labelled Processed rather than Bit-perfect. You can change this under
+              Audio output.
+            </span>
+          </div>
         )}
       </footer>
     );

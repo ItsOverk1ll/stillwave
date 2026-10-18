@@ -280,6 +280,7 @@ impl Worker {
     fn start(&mut self, queue: &[PathBuf]) {
         self.end(PlayState::Stopped, None);
         let mut index = 0;
+        let mut first_problem: Option<String> = None;
         while index < queue.len() {
             match self.begin_track(queue, index, &mut None) {
                 Ok((p, _)) => {
@@ -290,14 +291,20 @@ impl Worker {
                 }
                 Err(e) => {
                     self.note_error(queue, index, &e);
+                    if first_problem.is_none() {
+                        first_problem = Some(e.to_string());
+                    }
                     index += 1;
                 }
             }
         }
         self.set_queue(queue);
+        // Say why: usually every track failed for the same reason (e.g. the
+        // device refused the format), and that reason is what the user can act on.
+        let why = first_problem.unwrap_or_else(|| "The queue is empty.".into());
         self.end(
             PlayState::Error,
-            Some("nothing in the queue could be played".into()),
+            Some(format!("Nothing could be played. {why}")),
         );
     }
 
