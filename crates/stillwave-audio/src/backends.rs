@@ -10,7 +10,7 @@ pub mod wasapi {
 
 #[cfg(target_os = "linux")]
 pub mod alsa {
-    //! ALSA direct / PipeWire (Linux, Raspberry Pi). Phase 1.
+    //! `ALSA` direct / `PipeWire` (Linux, Raspberry Pi). Phase 1.
     pub const NAME: &str = "ALSA/PipeWire";
 }
 

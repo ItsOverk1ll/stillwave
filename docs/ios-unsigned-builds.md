@@ -17,11 +17,18 @@ An `.ipa` with no code signature that SideStore re-signs with the user's own App
 3. `xcodebuild archive` with `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""` produces a `.xcarchive` containing an unsigned `.app`.
 4. Copy the `.app` into `Payload/` and zip it as `Stillwave-unsigned.ipa`.
 
+## First CI run findings (macOS 15, Xcode 16.4)
+
+- `tauri ios init --ci` works on the runner and generates the project. **Proven.**
+- Plain `xcodebuild archive` fails: the project's build phase runs `tauri ios xcode-script`, which needs `.tauri/cli-options-server.json` from a running `tauri ios build`. **Proven; this is the risk listed below.**
+- `tauri ios build` fails with "Signing requires a development team" when no team is set.
+- Current fix (untested): run `tauri ios build` and force signing off with an `XCODE_XCCONFIG_FILE` override; take the `.xcarchive` it leaves behind. See `scripts/build-ios-unsigned.sh`.
+
 ## Known risks
 
 - The Xcode project's build phase runs `tauri ios xcode-script`, which may need options that only the `tauri ios build` process provides when invoked from plain `xcodebuild`. If so, build the Rust library first and point the project at it, or run the archive through `tauri ios build` with signing overrides.
 - Free-account signing by SideStore expires after 7 days (SideStore refreshes it while the device and the SideStore server are reachable).
-- `UIBackgroundModes: audio` is declared in `apps/stillwave/src-tauri/Info.ios.plist`. Tauri should merge `Info.ios.plist` into the generated Info.plist, but **verify** this in the first successful build (`plutil -p` on the built app).
+
 - Sideloaded apps cannot use some entitlements (for example certain background or push capabilities). Background audio is expected to work; confirm on a device in Phase 2.
 - The plugin host cannot use wasmtime's JIT on iOS; see plugins.md.
 
