@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-only
-#![allow(clippy::assert_is_empty)]
 use std::collections::BTreeSet;
 
 use rusqlite::Connection;

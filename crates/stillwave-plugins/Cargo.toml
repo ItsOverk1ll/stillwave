@@ -1,8 +1,30 @@
 [package]
 name = "stillwave-plugins"
+description = "Plugin manifest, signature verification and WASM host for Stillwave"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Full-speed JIT runtime (desktop, Android). Disabled on iOS, where JIT is not
+# allowed and an interpreter backend is needed instead (see docs/plugins.md).
+default = ["wasmtime-host"]
+wasmtime-host = ["dep:wasmtime"]
+
+[dependencies]
+ed25519-dalek = "2"
+getrandom = "0.3"
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+toml = "0.9"
+wasmtime = { version = "49", default-features = false, features = ["runtime", "cranelift", "std"], optional = true }
+
+[dev-dependencies]
+wat = "1"
+tempfile = "3"

@@ -1,0 +1,8 @@
+id = "org.stillwave.hello"
+name = "Hello"
+version = "0.1.0"
+author = "Stillwave"
+description = "Example plugin: logs a greeting and reads the library size."
+min_app_version = "0.0.1"
+tier = "official"
+permissions = ["library.read"]

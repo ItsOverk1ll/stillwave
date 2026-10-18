@@ -1,0 +1,13 @@
+[package]
+name = "hello-plugin"
+description = "Example Stillwave plugin"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+stillwave-plugin-sdk = { path = "../.." }

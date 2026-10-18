@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [".", "examples/hello"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ItsOverk1ll/stillwave"
+
+[package]
+name = "stillwave-plugin-sdk"
+description = "SDK for writing Stillwave WebAssembly plugins"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
