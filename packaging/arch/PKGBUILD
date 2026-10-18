@@ -1,0 +1,25 @@
+# DRAFT. Not published to the AUR yet (that comes after the first real release).
+# Maintainer: the Stillwave contributors
+pkgname=stillwave
+pkgver=0.0.1
+pkgrel=1
+pkgdesc='Open-source music player for music you own: bit-perfect playback with Spotify-style comfort'
+arch=('x86_64' 'aarch64')
+url='https://github.com/ItsOverk1ll/stillwave'
+license=('GPL-3.0-only')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'openssl')
+makedepends=('rust' 'cargo' 'nodejs' 'pnpm' 'git' 'pkgconf')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP') # replace with the real checksum when v$pkgver is tagged
+
+build() {
+  cd "$pkgname-$pkgver/apps/stillwave"
+  pnpm install --frozen-lockfile
+  pnpm tauri build --no-bundle
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 target/release/stillwave "$pkgdir/usr/bin/stillwave"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

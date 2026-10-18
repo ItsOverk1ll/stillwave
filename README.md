@@ -1,0 +1,61 @@
+# Stillwave
+
+**Status: pre-alpha.** Phase 0 (foundations) only. There is no playback, library scanning or import yet.
+
+Stillwave is an open-source "super Spotify" for music you own: Spotify's comfort (synced playlists, mixes, radio, offline downloads, a yearly recap, device handoff) on top of bit-perfect playback of your own files. It runs on Windows, Linux, Raspberry Pi, Android and iPhone from one codebase, syncs through an optional account, and grows through sandboxed plugins.
+
+## Principles (higher wins)
+
+1. **Sound quality first.** The file as recorded leaves the app unless you choose otherwise: no silent resampling, no DSP by default, gapless always.
+2. **Fast everywhere.** Cold start under 1 s, search-as-you-type under 50 ms on a 50,000-track library, 60 fps scrolling.
+3. **Reliable.** A crash can never corrupt the library.
+4. **Easy to switch to.** Moving from Spotify should take minutes.
+5. **Local-first, account optional.** Everything works offline; synced data is end-to-end encrypted.
+6. **Small core, plugins for the rest.** Optional features are signed WebAssembly plugins that never touch the audio path.
+
+## Platforms
+
+| Platform | Package | Phase 0 state |
+| --- | --- | --- |
+| Windows x64 | NSIS (per-user) and MSI | app builds and runs (verified locally); installers built by CI |
+| Linux x64 | deb, rpm, AppImage | built by CI only |
+| Linux arm64 / Raspberry Pi OS | deb | built by CI only |
+| Android | sideloaded APK | Rust code cross-compiles locally; APK built by CI only |
+| iPhone | unsigned ipa for SideStore | spike; not yet proven |
+
+"Built by CI only" means it has not been run by a person yet. See `docs/` for details.
+
+## Layout
+
+```
+crates/stillwave-core     domain types, UUIDv7 IDs, hybrid logical clock
+crates/stillwave-db       SQLite schema, migrations, change log, FTS5 search
+crates/stillwave-audio    decoder/output traits, signal-path model (no playback yet)
+crates/stillwave-plugins  plugin manifest, ed25519 signing, WASM host
+apps/stillwave            Tauri 2 app (React + TypeScript), desktop and mobile
+plugin-sdk                MIT-licensed SDK and an example plugin
+server                    account/sync service (placeholder until Phase 4)
+docs                      architecture, decisions (ADRs), benchmarks, build notes
+```
+
+## Building
+
+You need Rust (the version is pinned in `rust-toolchain.toml`), Node LTS and pnpm.
+
+```bash
+cargo test --workspace                  # all Rust tests
+cd apps/stillwave
+pnpm install
+pnpm tauri dev                          # run the desktop app
+pnpm tauri build                        # installers for the current OS
+```
+
+Linux also needs the Tauri system libraries (`libwebkit2gtk-4.1-dev`, `libxdo-dev`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`). Android needs JDK 17, the Android SDK and NDK 27, and on Windows, Developer Mode (Tauri creates symlinks). iOS builds only on macOS.
+
+Checks (the same ones CI runs) are listed in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Licences
+
+GPL-3.0 for the apps and core crates, AGPL-3.0 for the account server, MIT for the plugin SDK. The choice is pending final confirmation.
+
+Stillwave is not affiliated with Spotify, Tidal or any other service. It does not save audio from streaming services and does not circumvent DRM.

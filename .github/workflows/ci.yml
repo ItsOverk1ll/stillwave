@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system libraries (Tauri)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/stillwave/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: apps/stillwave/pnpm-lock.yaml
+      - name: Build frontend (the Tauri crate embeds it)
+        working-directory: apps/stillwave
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Plugin crate without the JIT runtime (iOS configuration)
+        run: cargo clippy -p stillwave-plugins --no-default-features --all-targets -- -D warnings
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/stillwave
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/stillwave/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+          cache-dependency-path: apps/stillwave/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  plugin-sdk:
+    name: Plugin SDK and signed example
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            plugin-sdk -> target
+      - name: SDK tests and lints
+        working-directory: plugin-sdk
+        run: |
+          cargo test
+          cargo clippy --target wasm32-unknown-unknown --all-targets -- -D warnings
+      # The key is made fresh on every run. It signs only this CI check and is
+      # not trusted anywhere.
+      - name: Build, sign and run the hello plugin with a CI-only key
+        run: |
+          cargo run -q -p stillwave-plugins --bin stillwave-plugin-tool -- keygen ci
+          python3 scripts/package_plugin.py plugin-sdk/examples/hello dist/hello keys/ci.key keys/ci.pub
+          cargo run -q -p stillwave-plugins --bin stillwave-plugin-tool -- run dist/hello keys/ci.pub hello
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hello-plugin-ci-signed
+          path: dist/hello

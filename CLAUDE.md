@@ -59,6 +59,8 @@ stillwave/
 ├── plugin-sdk/                # MIT-licensed SDK + example plugin
 ├── server/                    # AGPL-3.0, account/sync service (placeholder until Phase 4)
 ├── fixtures/                  # generated test audio; fixtures/private/ is git-ignored
+├── scripts/                   # fixture generation, plugin packaging, unsigned iOS build
+├── packaging/arch/            # AUR PKGBUILD draft
 ├── docs/
 │   ├── architecture.md
 │   └── decisions/             # one short ADR per decision

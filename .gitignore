@@ -13,3 +13,6 @@ apps/stillwave/src-tauri/target
 apps/stillwave/src-tauri/gen/android/.gradle
 apps/stillwave/src-tauri/gen/android/build
 apps/stillwave/src-tauri/gen/android/app/build
+apps/stillwave/src-tauri/gen/android/tauri.settings.gradle
+apps/stillwave/src-tauri/gen/android/app/tauri.build.gradle.kts
+build/
