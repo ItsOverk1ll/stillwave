@@ -14,7 +14,7 @@ A silent 16-bit/44.1 kHz WAV was played through the full app (scan, search, play
 
 ## What is NOT verified
 
-- **Audible playback.** Only silence has been played on real hardware; nobody has listened to music through it (and no external DAC was available). `cargo run -p stillwave-audio --example play -- <file>` does this; exclusive mode silences other apps while it plays.
+- **Critical listening and hi-res output.** The maintainer's first listening test (2026-10-18, MP3 files) played correctly and sounded right, but no lossless or hi-res file has been listened to, and no external DAC was available. `cargo run -p stillwave-audio --example play -- <file>` does this; exclusive mode silences other apps while it plays.
 - Behaviour when a device is unplugged mid-playback, on sleep/resume, or under CPU load (the underrun counter exists; there is no stress test yet).
 - Linux (ALSA, PipeWire), Android (AAudio) and iOS: only the traits and empty backends exist.
 - Lofty and Symphonia on very large or damaged real libraries (the tests use generated files).
