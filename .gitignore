@@ -1,0 +1,15 @@
+/target
+node_modules
+dist
+.env*
+!.env.example
+fixtures/private/
+fixtures/generated/
+keys/
+*.key
+*.pem
+.DS_Store
+apps/stillwave/src-tauri/target
+apps/stillwave/src-tauri/gen/android/.gradle
+apps/stillwave/src-tauri/gen/android/build
+apps/stillwave/src-tauri/gen/android/app/build
