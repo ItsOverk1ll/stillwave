@@ -14,17 +14,20 @@ pnpm install --frozen-lockfile
 
 # Plain `xcodebuild` cannot be used: the project's build phase calls
 # `tauri ios xcode-script`, which needs the options server that only a running
-# `tauri ios build` provides. So Tauri drives xcodebuild, and an xcconfig named in
-# XCODE_XCCONFIG_FILE (Xcode applies it over the project settings) turns signing off.
-xcconfig="$root/build/unsigned.xcconfig"
-mkdir -p "$root/build" "$root/dist"
-cat > "$xcconfig" <<'XC'
-CODE_SIGNING_ALLOWED = NO
-CODE_SIGNING_REQUIRED = NO
-CODE_SIGN_IDENTITY =
-DEVELOPMENT_TEAM =
-XC
-export XCODE_XCCONFIG_FILE="$xcconfig"
+# `tauri ios build` provides. So Tauri drives xcodebuild. It calls `xcodebuild`
+# by name, so a wrapper first on PATH adds command-line build settings (which a
+# project cannot override) to switch code signing off.
+mkdir -p "$root/build/shim" "$root/dist"
+real_xcodebuild="$(command -v xcodebuild)"
+cat > "$root/build/shim/xcodebuild" <<SHIM
+#!/usr/bin/env bash
+case " \$* " in
+  *" -exportArchive "*) exec "$real_xcodebuild" "\$@" ;;
+esac
+exec "$real_xcodebuild" "\$@" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=
+SHIM
+chmod +x "$root/build/shim/xcodebuild"
+export PATH="$root/build/shim:$PATH"
 
 # Tauri's own export step wants a signing identity and is allowed to fail; the
 # unsigned .xcarchive it leaves behind is what we package.

@@ -28,7 +28,7 @@ An `.ipa` with no code signature that SideStore re-signs with the user's own App
 
 - The Xcode project's build phase runs `tauri ios xcode-script`, which may need options that only the `tauri ios build` process provides when invoked from plain `xcodebuild`. If so, build the Rust library first and point the project at it, or run the archive through `tauri ios build` with signing overrides.
 - Free-account signing by SideStore expires after 7 days (SideStore refreshes it while the device and the SideStore server are reachable).
-
+- `UIBackgroundModes: audio` is declared in `apps/stillwave/src-tauri/Info.ios.plist`. Tauri should merge `Info.ios.plist` into the generated Info.plist; the build script prints the value from the built app, so **check the CI log** to confirm.
 - Sideloaded apps cannot use some entitlements (for example certain background or push capabilities). Background audio is expected to work; confirm on a device in Phase 2.
 - The plugin host cannot use wasmtime's JIT on iOS; see plugins.md.
 

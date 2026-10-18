@@ -102,9 +102,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build APK
         working-directory: apps/stillwave
-        env:
-          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/27.2.12479018
         run: |
+          export NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
           pnpm install --frozen-lockfile
           pnpm tauri android build --debug --apk --target aarch64
       - uses: actions/upload-artifact@v4
