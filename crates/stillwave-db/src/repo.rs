@@ -448,6 +448,17 @@ impl Logger<'_> {
         op: &str,
         fields: &[&str],
     ) -> Result<()> {
+        self.record_raw(tx, entity, id, op, fields)
+    }
+
+    fn record_raw(
+        &mut self,
+        tx: &Transaction,
+        entity: &str,
+        id: &[u8],
+        op: &str,
+        fields: &[&str],
+    ) -> Result<()> {
         let hlc = self.clock.tick();
         tx.prepare_cached(
             "INSERT INTO change_log (entity_type, entity_id, op, changed_fields, hlc, device_id)
@@ -455,7 +466,7 @@ impl Logger<'_> {
         )?
         .execute(params![
             entity,
-            id.as_slice(),
+            id,
             op,
             json!(fields).to_string(),
             hlc.to_string(),
@@ -541,6 +552,9 @@ fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
     )?;
     Ok(())
 }
+
+mod library;
+pub use library::{FileFacts, ImportCounts, StoredFile, TrackImport};
 
 #[cfg(test)]
 mod tests;

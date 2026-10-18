@@ -9,4 +9,4 @@ mod repo;
 
 pub use error::DbError;
 pub use migrations::{current_version, latest_version, migrate};
-pub use repo::Db;
+pub use repo::{Db, FileFacts, ImportCounts, StoredFile, TrackImport};

@@ -5,6 +5,7 @@ members = [
     "crates/stillwave-db",
     "crates/stillwave-audio",
     "crates/stillwave-plugins",
+    "crates/stillwave-library",
     "apps/stillwave/src-tauri",
 ]
 

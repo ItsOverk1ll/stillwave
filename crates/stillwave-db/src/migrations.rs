@@ -7,7 +7,10 @@ use rusqlite::Connection;
 
 use crate::error::DbError;
 
-pub(crate) const MIGRATIONS: &[&str] = &[include_str!("../migrations/0001_initial.sql")];
+pub(crate) const MIGRATIONS: &[&str] = &[
+    include_str!("../migrations/0001_initial.sql"),
+    include_str!("../migrations/0002_library_lookups.sql"),
+];
 
 /// The schema version a fully migrated database reports.
 #[must_use]

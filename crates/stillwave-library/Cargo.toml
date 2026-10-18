@@ -1,0 +1,21 @@
+[package]
+name = "stillwave-library"
+description = "Library scanner: finds audio files, reads tags with Lofty, stores them via stillwave-db"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lofty = "0.25.4"
+stillwave-core = { path = "../stillwave-core" }
+stillwave-db = { path = "../stillwave-db" }
+thiserror = "2.0.21"
+walkdir = "2.5.0"
+
+[dev-dependencies]
+tempfile = "3"

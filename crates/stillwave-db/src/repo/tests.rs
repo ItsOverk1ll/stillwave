@@ -81,6 +81,8 @@ fn migrated_schema_matches_expected_objects() {
         "idx_likes_placeholder",
         "idx_change_log_hlc",
         "idx_change_log_entity",
+        "idx_artists_name",
+        "idx_albums_title",
     ]
     .into_iter()
     .map(String::from)
@@ -321,4 +323,117 @@ fn foreign_keys_are_enforced_and_deleting_an_item_cascades() {
     assert!(db.is_liked(EntryTarget::Item(i.id)).unwrap());
     db.delete_media_item(i.id).unwrap();
     assert!(!db.is_liked(EntryTarget::Item(i.id)).unwrap());
+}
+
+fn track(path: &str, title: &str, artist: &str, album: &str) -> TrackImport {
+    TrackImport {
+        title: title.into(),
+        artist: Some(artist.into()),
+        album_artist: None,
+        album: Some(album.into()),
+        year: Some(2001),
+        track_number: Some(1),
+        disc_number: None,
+        isrc: None,
+        file: FileFacts {
+            path: path.into(),
+            size_bytes: 1000,
+            modified_unix_ms: 5,
+            container: "flac".into(),
+            codec: "flac".into(),
+            sample_rate_hz: 44_100,
+            bit_depth: Some(16),
+            channels: 2,
+            duration_ms: 180_000,
+        },
+    }
+}
+
+#[test]
+fn import_creates_shared_artists_and_albums_case_insensitively() {
+    let mut db = Db::open_in_memory().unwrap();
+    let counts = db
+        .import_tracks(&[
+            track("/m/a.flac", "One", "Daft Punk", "Discovery"),
+            track("/m/b.flac", "Two", "daft punk", "DISCOVERY"),
+        ])
+        .unwrap();
+    assert_eq!((counts.added, counts.updated), (2, 0));
+    let n = |sql: &str| db.conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+    assert_eq!(n("SELECT COUNT(*) FROM artists"), 1);
+    assert_eq!(n("SELECT COUNT(*) FROM albums"), 1);
+    assert_eq!(db.media_item_count().unwrap(), 2);
+    assert_eq!(db.file_count().unwrap(), 2);
+    assert_eq!(db.search("discovery", 10).unwrap().len(), 2);
+    assert_eq!(db.search("daft", 10).unwrap().len(), 2);
+}
+
+#[test]
+fn reimporting_a_path_updates_in_place() {
+    let mut db = Db::open_in_memory().unwrap();
+    db.import_tracks(&[track("/m/a.flac", "Old", "Band", "Album")])
+        .unwrap();
+    let before = db.list_media_items(10, 0).unwrap()[0].id;
+    let mut changed = track("/m/a.flac", "New title", "Band", "Album");
+    changed.file.size_bytes = 2000;
+    let counts = db.import_tracks(&[changed]).unwrap();
+    assert_eq!((counts.added, counts.updated), (0, 1));
+    let items = db.list_media_items(10, 0).unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, before, "item identity survives a retag");
+    assert_eq!(items[0].title, "New title");
+    assert_eq!(db.stored_files().unwrap()["/m/a.flac"].size_bytes, 2000);
+    assert_eq!(db.search("old", 5).unwrap().len(), 0);
+}
+
+#[test]
+fn removing_a_file_keeps_the_item_and_its_playlist_entries() {
+    let mut db = Db::open_in_memory().unwrap();
+    db.import_tracks(&[track("/m/a.flac", "Keep me", "Band", "Album")])
+        .unwrap();
+    let item = db.list_media_items(1, 0).unwrap()[0].id;
+    let pl = Playlist {
+        id: PlaylistId::new(),
+        name: "p".into(),
+        description: None,
+    };
+    db.insert_playlist(&pl).unwrap();
+    db.insert_playlist_entry(&PlaylistEntry {
+        id: PlaylistEntryId::new(),
+        playlist_id: pl.id,
+        target: EntryTarget::Item(item),
+        position: "a".into(),
+    })
+    .unwrap();
+    assert_eq!(
+        db.remove_files(&["/m/a.flac".into(), "/m/none.flac".into()])
+            .unwrap(),
+        1
+    );
+    assert_eq!(db.file_count().unwrap(), 0);
+    assert_eq!(db.list_playlist_entries(pl.id).unwrap().len(), 1);
+    assert!(db.get_media_item(item).unwrap().is_some());
+}
+
+#[test]
+fn failed_import_batch_rolls_back_completely() {
+    let mut db = Db::open_in_memory().unwrap();
+    db.import_tracks(&[track("/m/a.flac", "A", "Band", "Album")])
+        .unwrap();
+    let changes = db.change_count().unwrap();
+    // Second track has a title that violates NOT NULL? Use a poisoned device row instead:
+    // make the batch fail on its second element by dropping the table it needs.
+    db.conn.execute_batch("DROP TABLE media_files").unwrap();
+    let r = db.import_tracks(&[track("/m/b.flac", "B", "Other", "Other Album")]);
+    assert!(r.is_err());
+    assert_eq!(db.change_count().unwrap(), changes);
+    assert_eq!(db.media_item_count().unwrap(), 1);
+    let artists: i64 = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM artists", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(
+        artists, 1,
+        "artist created earlier in the failed batch was rolled back"
+    );
 }
