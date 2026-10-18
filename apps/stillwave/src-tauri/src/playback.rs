@@ -34,6 +34,8 @@ impl AudioMode {
         }
     }
 
+    // Only the Windows player exists so far; other platforms return an error before this.
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn options(self) -> PlayerOptions {
         PlayerOptions {
             mode: if self == Self::Shared {
