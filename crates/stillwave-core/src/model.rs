@@ -47,7 +47,7 @@ impl MediaKind {
     }
 }
 
-/// IDs in other systems (ISRC, Spotify URI, MusicBrainz, ...), keyed by scheme.
+/// IDs in other systems (ISRC, Spotify URI, `MusicBrainz`, ...), keyed by scheme.
 /// Kept on every entity that can be matched during an import.
 pub type ExternalIds = BTreeMap<String, String>;
 

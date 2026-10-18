@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Strongly typed UUIDv7 identifiers. Distinct newtypes stop an `AlbumId` being
+//! Strongly typed `UUIDv7` identifiers. Distinct newtypes stop an `AlbumId` being
 //! passed where a `TrackId` is expected.
 
 use std::fmt;
@@ -21,7 +21,7 @@ macro_rules! define_id {
         pub struct $name(Uuid);
 
         impl $name {
-            /// Generates a new time-ordered (UUIDv7) identifier.
+            /// Generates a new time-ordered (`UUIDv7`) identifier.
             #[must_use]
             pub fn new() -> Self {
                 Self(Uuid::now_v7())
