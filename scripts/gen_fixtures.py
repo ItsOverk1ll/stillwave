@@ -77,14 +77,24 @@ def main():
             wav = OUT / f"{name}.wav"
             write_wav(wav, rate, bits, mono)
             if ffmpeg:
-                sample_fmt = "s16" if bits == 16 else "s32"
+                # FLAC takes packed s16/s32; ALAC takes planar s16p/s32p. 24-bit
+                # audio travels in 32-bit containers with 24 valid bits.
                 flac_fmt = "s16" if bits == 16 else "s32"
+                alac_fmt = "s16p" if bits == 16 else "s32p"
                 subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav),
-                                "-sample_fmt", flac_fmt, "-bits_per_raw_sample", str(bits),
+                                "-c:a", "flac", "-sample_fmt", flac_fmt,
+                                "-bits_per_raw_sample", str(bits),
                                 str(OUT / f"{name}.flac")], check=True)
                 subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(wav),
-                                "-c:a", "alac", "-sample_fmt", sample_fmt,
+                                "-c:a", "alac", "-sample_fmt", alac_fmt,
+                                "-bits_per_raw_sample", str(bits),
                                 str(OUT / f"{name}.m4a")], check=True)
+    if ffmpeg:
+        # Lossy samples: only used to check they are flagged lossy and decode.
+        src = OUT / "sweep-16-44k.wav"
+        for args, ext in ((["-c:a", "libmp3lame", "-q:a", "2"], "mp3"), (["-c:a", "libvorbis", "-q:a", "5"], "ogg")):
+            subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(src), *args,
+                            str(OUT / f"lossy-16-44k.{ext}")], check=True)
     print(f"wrote fixtures to {OUT}")
 
 

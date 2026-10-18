@@ -20,6 +20,10 @@ pub trait Decoder: Send {
     fn format(&self) -> StreamFormat;
     /// Total length in frames, when known.
     fn total_frames(&self) -> Option<u64>;
+    /// True for lossy codecs (MP3, AAC, Vorbis, Opus). Never bit-perfect.
+    fn is_lossy(&self) -> bool {
+        false
+    }
     /// Fills `out` with interleaved left-aligned samples; returns samples written
     /// (0 means end of stream). Never resamples or alters level.
     fn read(&mut self, out: &mut [i32]) -> Result<usize, AudioError>;

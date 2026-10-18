@@ -8,8 +8,10 @@
 pub mod backends;
 pub mod format;
 pub mod signal_path;
+pub mod symphonia_decoder;
 pub mod traits;
 
 pub use format::StreamFormat;
 pub use signal_path::{QualityBadge, SignalPath};
+pub use symphonia_decoder::FileDecoder;
 pub use traits::{AudioError, Decoder, OutputDevice, OutputMode, OutputStream};
