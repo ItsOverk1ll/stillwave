@@ -1,53 +1,289 @@
 // SPDX-License-Identifier: GPL-3.0-only
-import { useEffect, useState } from "react";
-import { getAppInfo, type AppInfo } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as api from "./api";
+import type { AppInfo, ScanFinished, ScanProgress, Settings } from "./api";
+import AudioSettings from "./AudioSettings";
+import PlayerBar from "./PlayerBar";
+import TrackList from "./TrackList";
 import "./styles.css";
 
-type State =
-  { status: "loading" } | { status: "ready"; info: AppInfo } | { status: "error"; message: string };
+/** Wait this long after the last keystroke before searching. */
+const SEARCH_DELAY_MS = 120;
+
+interface ScanState {
+  running: boolean;
+  progress: ScanProgress | null;
+  result: ScanFinished | null;
+}
 
 export default function App() {
-  const [state, setState] = useState<State>({ status: "loading" });
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState("");
+  const [query, setQuery] = useState("");
+  const [version, setVersion] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
+  const [scan, setScan] = useState<ScanState>({ running: false, progress: null, result: null });
+  const startedRescan = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    getAppInfo().then(
-      (info) => {
-        if (!cancelled) setState({ status: "ready", info });
-      },
-      (err: unknown) => {
-        if (!cancelled) setState({ status: "error", message: String(err) });
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
+  const report = useCallback((message: string) => {
+    setError(message);
   }, []);
 
-  return (
-    <main className="home">
-      <h1>Stillwave</h1>
-      <p className="tagline">Your music, your files, bit-perfect.</p>
+  const beginScan = useCallback(
+    (path: string) => {
+      setScan({ running: true, progress: null, result: null });
+      api.startScan(path).catch((e: unknown) => {
+        setScan({ running: false, progress: null, result: null });
+        report(String(e));
+      });
+    },
+    [report],
+  );
 
-      {state.status === "loading" && <p role="status">Loading…</p>}
-      {state.status === "error" && (
-        <p role="alert" className="error">
-          Could not reach the app core: {state.message}
+  // Startup: settings and about info; then catch up with changes on disk.
+  useEffect(() => {
+    api.getAppInfo().then(setInfo, () => undefined);
+    api.getSettings().then(
+      (s) => {
+        setSettings(s);
+        if (s.musicFolder && !startedRescan.current) {
+          startedRescan.current = true;
+          beginScan(s.musicFolder); // incremental: unchanged files are skipped
+        }
+      },
+      (e: unknown) => {
+        report(`Could not reach the app core: ${String(e)}`);
+      },
+    );
+  }, [beginScan, report]);
+
+  // Scan events from Rust.
+  useEffect(() => {
+    const unlisten = Promise.all([
+      api.onScanProgress((progress) => {
+        setScan((s) => ({ ...s, running: true, progress }));
+      }),
+      api.onScanFinished((result) => {
+        setScan({ running: false, progress: null, result });
+        setVersion((v) => v + 1);
+        if (result.error) report(result.error);
+        // The scan remembers its folder; pick that up whoever started the scan.
+        api.getSettings().then(setSettings, () => undefined);
+      }),
+    ]);
+    return () => {
+      void unlisten.then((fns) => {
+        fns.forEach((f) => {
+          f();
+        });
+      });
+    };
+  }, [report]);
+
+  // Debounce the search box.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setQuery(typed);
+    }, SEARCH_DELAY_MS);
+    return () => {
+      clearTimeout(id);
+    };
+  }, [typed]);
+
+  const chooseFolder = () => {
+    api.pickFolder().then(
+      (path) => {
+        if (!path) return;
+        setSettings((s) => (s ? { ...s, musicFolder: path } : s));
+        beginScan(path);
+      },
+      (e: unknown) => {
+        report(String(e));
+      },
+    );
+  };
+
+  const folder = settings?.musicFolder ?? null;
+  const hasLibrary = total !== null && total > 0;
+
+  return (
+    <div className="app">
+      <header className="top">
+        <h1>Stillwave</h1>
+        <div className="folder">
+          {folder ? (
+            <>
+              <span className="muted" title={folder}>
+                {folder}
+              </span>
+              <button
+                type="button"
+                disabled={scan.running}
+                onClick={() => {
+                  beginScan(folder);
+                }}
+              >
+                Rescan
+              </button>
+              <button type="button" disabled={scan.running} onClick={chooseFolder}>
+                Change folder
+              </button>
+            </>
+          ) : null}
+          {scan.running && (
+            <button
+              type="button"
+              onClick={() => {
+                api.cancelScan().catch(() => undefined);
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+      </header>
+
+      {error && (
+        <div className="banner" role="alert">
+          <span>{error}</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => {
+              setError(null);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      <ScanStatus scan={scan} />
+
+      {!folder && settings && (
+        <section className="welcome">
+          <h2>Add your music</h2>
+          <p>
+            Choose the folder where your music lives. Stillwave reads your files, never changes
+            them, and keeps everything on this computer.
+          </p>
+          <button type="button" className="primary" onClick={chooseFolder}>
+            Choose music folder…
+          </button>
+        </section>
+      )}
+
+      {folder && (
+        <main className="library">
+          <div className="searchbar">
+            <input
+              type="search"
+              aria-label="Search your library"
+              placeholder="Search title, artist or album"
+              value={typed}
+              onChange={(e) => {
+                setTyped(e.target.value);
+              }}
+            />
+            {total !== null && (
+              <span className="muted">
+                {query.trim() ? plural(total, "match", "matches") : plural(total, "track")}
+              </span>
+            )}
+          </div>
+          {(hasLibrary || total === null || query.trim() !== "" || !scan.running) && (
+            <TrackList
+              key={`${query}\u0000${version.toString()}`}
+              query={query}
+              onTotal={setTotal}
+              onError={report}
+              onPlay={(index) => {
+                api.playFrom(query, index).catch((e: unknown) => {
+                  report(String(e));
+                });
+              }}
+            />
+          )}
+        </main>
+      )}
+
+      <AudioSettings onError={report} />
+      <PlayerBar onError={report} />
+
+      <details className="about">
+        <summary>About</summary>
+        {info && (
+          <dl className="info">
+            <dt>App version</dt>
+            <dd>{info.appVersion}</dd>
+            <dt>Core version</dt>
+            <dd>{info.coreVersion}</dd>
+            <dt>Database schema</dt>
+            <dd>v{info.schemaVersion}</dd>
+            <dt>Database file</dt>
+            <dd className="dbpath">{info.dbPath}</dd>
+          </dl>
+        )}
+        <p className="muted">
+          Pre-alpha. Nothing is uploaded; your library stays on this computer.
         </p>
+      </details>
+    </div>
+  );
+}
+
+/** 1 file, 2 files. Pass `many` for irregular plurals (match, matches). */
+function plural(n: number, noun: string, many = `${noun}s`): string {
+  return `${n.toLocaleString()} ${n === 1 ? noun : many}`;
+}
+
+function ScanStatus({ scan }: { scan: ScanState }) {
+  if (scan.running) {
+    const p = scan.progress;
+    return (
+      <div className="scan" role="status">
+        {p?.phase === "importing" ? (
+          <>
+            <span>
+              Reading tags… {p.done.toLocaleString()} of {p.total.toLocaleString()}
+            </span>
+            <progress max={p.total} value={p.done} />
+          </>
+        ) : (
+          <>
+            <span>Looking for music… {plural(p?.found ?? 0, "file")}</span>
+            <progress />
+          </>
+        )}
+      </div>
+    );
+  }
+  const r = scan.result;
+  if (!r || r.error) return null;
+  const parts = [
+    plural(r.found, "file"),
+    r.added > 0 ? `${r.added.toLocaleString()} new` : null,
+    r.updated > 0 ? `${r.updated.toLocaleString()} updated` : null,
+    r.removed > 0 ? `${r.removed.toLocaleString()} removed` : null,
+  ].filter(Boolean);
+  return (
+    <div className="scan done" role="status">
+      <span>
+        {r.cancelled ? "Scan cancelled. " : "Scan finished: "}
+        {parts.join(", ")}.
+      </span>
+      {r.failedCount > 0 && (
+        <details>
+          <summary>{plural(r.failedCount, "file")} could not be read</summary>
+          <ul>
+            {r.failed.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        </details>
       )}
-      {state.status === "ready" && (
-        <dl className="info">
-          <dt>App version</dt>
-          <dd>{state.info.appVersion}</dd>
-          <dt>Core version</dt>
-          <dd>{state.info.coreVersion}</dd>
-          <dt>Database schema</dt>
-          <dd>v{state.info.schemaVersion}</dd>
-          <dt>Database file</dt>
-          <dd className="path">{state.info.dbPath}</dd>
-        </dl>
-      )}
-      <p className="status">Pre-alpha. Playback arrives in Phase 1.</p>
-    </main>
+    </div>
   );
 }

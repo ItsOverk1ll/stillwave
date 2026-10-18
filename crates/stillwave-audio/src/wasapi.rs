@@ -696,6 +696,43 @@ fn run(r: &mut Render, consumer: &mut HeapCons<i32>, shared: &Shared) {
     }
 }
 
+/// Takes up to `out.len()` samples from the ring for the device.
+///
+/// Anything the caller flushed (everything up to `discard_until`, a running total)
+/// is thrown away first, then real audio is taken. Every sample removed from the
+/// ring, played or discarded, is added to `consumed`, which `drain()` compares with
+/// what was pushed. When `silent` (paused) nothing is taken. Returns how many
+/// samples of audio were written to `out`.
+fn take_samples(
+    ring: &mut impl Consumer<Item = i32>,
+    consumed: &AtomicU64,
+    discard_until: &AtomicU64,
+    out: &mut [i32],
+    silent: bool,
+) -> usize {
+    loop {
+        let target = discard_until.load(Ordering::Acquire);
+        let done = consumed.load(Ordering::Relaxed);
+        if done >= target {
+            break;
+        }
+        let want = usize::try_from(target - done)
+            .unwrap_or(usize::MAX)
+            .min(out.len());
+        let dropped = ring.pop_slice(&mut out[..want]);
+        if dropped == 0 {
+            break;
+        }
+        consumed.fetch_add(dropped as u64, Ordering::Release);
+    }
+    if silent {
+        return 0;
+    }
+    let got = ring.pop_slice(out);
+    consumed.fetch_add(got as u64, Ordering::Release);
+    got
+}
+
 /// Fills `frames` frames of the device buffer from the ring (or silence).
 fn fill(
     r: &Render,
@@ -707,11 +744,13 @@ fn fill(
 ) -> Result<(), String> {
     let samples = frames as usize * r.channels;
     let scratch = &mut scratch[..samples];
-    let got = if silent {
-        0
-    } else {
-        consumer.pop_slice(scratch)
-    };
+    let got = take_samples(
+        consumer,
+        &shared.consumed,
+        &shared.discard_until,
+        scratch,
+        silent,
+    );
     if got < samples {
         scratch[got..].fill(0);
         if !silent {
@@ -742,4 +781,88 @@ fn fill(
         .frames_played
         .fetch_add((got / r.channels) as u64, Ordering::Relaxed);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use ringbuf::traits::{Observer, Producer, Split};
+    use ringbuf::HeapRb;
+
+    use super::*;
+
+    fn ring(n: i32) -> (ringbuf::HeapProd<i32>, ringbuf::HeapCons<i32>) {
+        let (mut p, c) = HeapRb::<i32>::new(1024).split();
+        let all: Vec<i32> = (0..n).collect();
+        assert_eq!(p.push_slice(&all), all.len());
+        (p, c)
+    }
+
+    #[test]
+    fn taking_samples_counts_them_so_drain_can_finish() {
+        let (_p, mut c) = ring(100);
+        let (consumed, discard) = (AtomicU64::new(0), AtomicU64::new(0));
+        let mut out = [0i32; 64];
+        assert_eq!(
+            take_samples(&mut c, &consumed, &discard, &mut out, false),
+            64
+        );
+        assert_eq!(&out[..3], &[0, 1, 2]);
+        assert_eq!(
+            take_samples(&mut c, &consumed, &discard, &mut out, false),
+            36
+        );
+        // Everything pushed has now been consumed: this is what drain() waits for.
+        assert_eq!(consumed.load(Ordering::Relaxed), 100);
+    }
+
+    #[test]
+    fn a_flush_discards_stale_audio_and_still_counts_it() {
+        let (_p, mut c) = ring(100);
+        let (consumed, discard) = (AtomicU64::new(0), AtomicU64::new(40));
+        let mut out = [0i32; 30];
+        assert_eq!(
+            take_samples(&mut c, &consumed, &discard, &mut out, false),
+            30
+        );
+        assert_eq!(out[0], 40, "the first 40 samples were flushed, not played");
+        assert_eq!(consumed.load(Ordering::Relaxed), 70);
+    }
+
+    #[test]
+    fn a_flush_larger_than_one_buffer_is_discarded_across_calls() {
+        let (_p, mut c) = ring(100);
+        let (consumed, discard) = (AtomicU64::new(0), AtomicU64::new(90));
+        let mut out = [0i32; 16];
+        let got = take_samples(&mut c, &consumed, &discard, &mut out, false);
+        assert_eq!(got, 10);
+        assert_eq!(out[0], 90);
+        assert_eq!(consumed.load(Ordering::Relaxed), 100);
+    }
+
+    #[test]
+    fn audio_pushed_after_a_flush_is_played() {
+        let (mut p, mut c) = ring(10);
+        let (consumed, discard) = (AtomicU64::new(0), AtomicU64::new(10));
+        let mut out = [0i32; 8];
+        assert_eq!(
+            take_samples(&mut c, &consumed, &discard, &mut out, false),
+            0
+        );
+        p.push_slice(&[7, 8, 9]);
+        assert_eq!(
+            take_samples(&mut c, &consumed, &discard, &mut out, false),
+            3
+        );
+        assert_eq!(&out[..3], &[7, 8, 9]);
+    }
+
+    #[test]
+    fn paused_takes_nothing_from_the_ring() {
+        let (_p, mut c) = ring(10);
+        let (consumed, discard) = (AtomicU64::new(0), AtomicU64::new(0));
+        let mut out = [0i32; 8];
+        assert_eq!(take_samples(&mut c, &consumed, &discard, &mut out, true), 0);
+        assert_eq!(consumed.load(Ordering::Relaxed), 0);
+        assert_eq!(c.occupied_len(), 10);
+    }
 }

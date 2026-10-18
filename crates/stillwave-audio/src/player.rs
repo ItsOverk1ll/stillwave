@@ -385,7 +385,9 @@ impl Worker {
             return;
         }
         match p.decoder.read(&mut p.buf) {
-            Ok(0) => self.advance(),
+            Ok(0) => {
+                self.advance();
+            }
             Ok(n) => {
                 p.pending = n;
                 p.pending_pos = 0;
@@ -506,12 +508,12 @@ impl Worker {
         }
         if let Ok(mut s) = self.status.lock() {
             s.state = state;
-            if state != PlayState::Playing {
-                s.position_frames = if state == PlayState::Finished {
-                    s.position_frames
-                } else {
-                    0
-                };
+            if state == PlayState::Finished {
+                if let Some(total) = s.total_frames {
+                    s.position_frames = total;
+                }
+            } else if state != PlayState::Playing {
+                s.position_frames = 0;
             }
             if error.is_some() {
                 s.error = error;

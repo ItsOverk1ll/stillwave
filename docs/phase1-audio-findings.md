@@ -8,9 +8,13 @@
 - The player delivers a file, a gapless queue, and a format-changing queue to a mock device bit-exactly, seeks accurately, pauses and stops promptly, skips unreadable files, and refuses to fall back to the mixer unless asked.
 - The scanner reads tags and properties (Lofty), skips unchanged files on rescan, keeps item identity across retags, never modifies audio files, and is cancellable.
 
+## Verified on real hardware (2026-10-18, silent test file)
+
+A silent 16-bit/44.1 kHz WAV was played through the full app (scan, search, play) to the HDMI monitor endpoint in exclusive mode and in mixer mode. No sound was made. Observed: the badge was Bit-perfect in exclusive mode and Processed in mixer mode; position advanced; pause held the position; resume, seek and stop worked; the track ended cleanly. This also caught a real bug that the mock-device tests could not: the render thread never counted the audio it consumed, so the end of a track hung until a 30 s timeout. It now has unit tests.
+
 ## What is NOT verified
 
-- **Real hardware playback.** Nobody has listened to it. `cargo run -p stillwave-audio --example play -- <file>` does this; exclusive mode silences other apps while it plays.
+- **Audible playback.** Only silence has been played on real hardware; nobody has listened to music through it (and no external DAC was available). `cargo run -p stillwave-audio --example play -- <file>` does this; exclusive mode silences other apps while it plays.
 - Behaviour when a device is unplugged mid-playback, on sleep/resume, or under CPU load (the underrun counter exists; there is no stress test yet).
 - Linux (ALSA, PipeWire), Android (AAudio) and iOS: only the traits and empty backends exist.
 - Lofty and Symphonia on very large or damaged real libraries (the tests use generated files).

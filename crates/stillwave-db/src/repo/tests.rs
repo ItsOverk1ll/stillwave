@@ -83,6 +83,7 @@ fn migrated_schema_matches_expected_objects() {
         "idx_change_log_entity",
         "idx_artists_name",
         "idx_albums_title",
+        "idx_media_items_sort",
     ]
     .into_iter()
     .map(String::from)
@@ -436,4 +437,83 @@ fn failed_import_batch_rolls_back_completely() {
         artists, 1,
         "artist created earlier in the failed batch was rolled back"
     );
+}
+
+#[test]
+fn library_rows_are_paged_in_library_order_and_can_be_searched() {
+    let mut db = Db::open_in_memory().unwrap();
+    let mut batch = Vec::new();
+    for (artist, album, n) in [
+        ("Zed", "Last", 1),
+        ("Abba", "Arrival", 2),
+        ("Abba", "Arrival", 1),
+        ("abba", "Waterloo", 1),
+    ] {
+        let mut t = track(
+            &format!("/m/{artist}{album}{n}.flac"),
+            &format!("Song {n}"),
+            artist,
+            album,
+        );
+        t.track_number = Some(n);
+        batch.push(t);
+    }
+    db.import_tracks(&batch).unwrap();
+    assert_eq!(db.library_count("").unwrap(), 4);
+    let all = db.library_rows("", 10, 0).unwrap();
+    let order: Vec<_> = all
+        .iter()
+        .map(|r| (r.album.clone().unwrap(), r.track_number.unwrap()))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("Arrival".into(), 1),
+            ("Arrival".into(), 2),
+            ("Waterloo".into(), 1),
+            ("Last".into(), 1)
+        ],
+        "artist, album, track, case-insensitively"
+    );
+    assert_eq!(all[0].codec.as_deref(), Some("flac"));
+    assert_eq!(all[0].sample_rate_hz, Some(44_100));
+    assert!(all[0].path.as_deref().unwrap().starts_with("/m/"));
+    // Paging.
+    let page = db.library_rows("", 2, 1).unwrap();
+    assert_eq!(page.len(), 2);
+    assert_eq!(page[0].item_id, all[1].item_id);
+    // Search.
+    assert_eq!(db.library_count("arrival").unwrap(), 2);
+    assert_eq!(db.library_rows("waterloo", 10, 0).unwrap().len(), 1);
+    assert_eq!(db.library_rows("nothing here", 10, 0).unwrap().len(), 0);
+    // Limits are capped, never trusted.
+    assert!(db.library_rows("", u32::MAX, 0).unwrap().len() <= 500);
+}
+
+#[test]
+fn settings_round_trip_and_do_not_touch_the_change_log() {
+    let db = Db::open_in_memory().unwrap();
+    assert_eq!(db.setting("music_folder").unwrap(), None);
+    db.set_setting("music_folder", "D:/Music").unwrap();
+    db.set_setting("music_folder", "E:/Music").unwrap();
+    assert_eq!(
+        db.setting("music_folder").unwrap().as_deref(),
+        Some("E:/Music")
+    );
+    db.clear_setting("music_folder").unwrap();
+    assert_eq!(db.setting("music_folder").unwrap(), None);
+    assert_eq!(db.change_count().unwrap(), 0);
+}
+
+#[test]
+fn item_path_finds_the_file_on_this_device() {
+    let mut db = Db::open_in_memory().unwrap();
+    db.import_tracks(&[track("/m/a.flac", "A", "B", "C")])
+        .unwrap();
+    let item = stillwave_core::MediaItemId::from_bytes(
+        *db.list_media_items(1, 0).unwrap()[0].id.as_bytes(),
+    );
+    assert_eq!(db.item_path(item).unwrap().as_deref(), Some("/m/a.flac"));
+    db.remove_files(&["/m/a.flac".into()]).unwrap();
+    assert_eq!(db.item_path(item).unwrap(), None);
 }

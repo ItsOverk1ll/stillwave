@@ -118,8 +118,8 @@ impl Db {
                     let file_id = MediaFileId::new();
                     tx.execute(
                         "INSERT INTO media_items (id, kind, title, artist_id, album_id, track_number,
-                                                  disc_number, duration_ms, isrc, external_ids)
-                         VALUES (?1, 'track', ?2, ?3, ?4, ?5, ?6, ?7, ?8, '{}')",
+                                                  disc_number, duration_ms, isrc, external_ids, sort_key)
+                         VALUES (?1, 'track', ?2, ?3, ?4, ?5, ?6, ?7, ?8, '{}', ?9)",
                         params![
                             item_id.as_bytes().as_slice(),
                             t.title,
@@ -128,7 +128,8 @@ impl Db {
                             t.track_number,
                             t.disc_number,
                             t.file.duration_ms,
-                            t.isrc
+                            t.isrc,
+                            sort_key(t)
                         ],
                     )?;
                     insert_file(tx, &file_id, &item_id, device.as_bytes(), &t.file)?;
@@ -236,7 +237,7 @@ fn update_item(
 ) -> Result<()> {
     tx.execute(
         "UPDATE media_items SET title = ?2, artist_id = ?3, album_id = ?4, track_number = ?5,
-                disc_number = ?6, duration_ms = ?7, isrc = ?8 WHERE id = ?1",
+                disc_number = ?6, duration_ms = ?7, isrc = ?8, sort_key = ?9 WHERE id = ?1",
         params![
             item_id,
             t.title,
@@ -245,10 +246,28 @@ fn update_item(
             t.track_number,
             t.disc_number,
             t.file.duration_ms,
-            t.isrc
+            t.isrc,
+            sort_key(t)
         ],
     )?;
     Ok(())
+}
+
+/// Library order: artist, album, disc, track, title, case-insensitive. Stored so
+/// the list can be paged from an index instead of sorting every row each time.
+fn sort_key(t: &TrackImport) -> String {
+    format!(
+        "{}\u{1}{}\u{1}{:03}{:04}\u{1}{}",
+        t.artist
+            .as_deref()
+            .or(t.album_artist.as_deref())
+            .unwrap_or(""),
+        t.album.as_deref().unwrap_or(""),
+        t.disc_number.unwrap_or(0).min(999),
+        t.track_number.unwrap_or(0).min(9999),
+        t.title
+    )
+    .to_lowercase()
 }
 
 fn update_file(tx: &Transaction, file_id: &[u8], f: &FileFacts) -> Result<()> {

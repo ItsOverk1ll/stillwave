@@ -10,4 +10,4 @@ mod read;
 mod scan;
 
 pub use read::{read_track, ReadError, AUDIO_EXTENSIONS};
-pub use scan::{scan, ScanError, ScanOptions, ScanProgress, ScanReport};
+pub use scan::{scan, LibraryStore, ScanError, ScanOptions, ScanProgress, ScanReport};

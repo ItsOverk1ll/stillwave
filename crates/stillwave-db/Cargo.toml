@@ -23,3 +23,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[[bench]]
+name = "library"
+harness = false

@@ -553,7 +553,9 @@ fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+mod browse;
 mod library;
+pub use browse::LibraryRow;
 pub use library::{FileFacts, ImportCounts, StoredFile, TrackImport};
 
 #[cfg(test)]

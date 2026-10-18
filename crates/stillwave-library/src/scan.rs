@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Folder scan: walk, skip unchanged files, read the rest, import in batches.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use stillwave_db::{Db, DbError, TrackImport};
+use stillwave_db::{Db, DbError, ImportCounts, StoredFile, TrackImport};
 use walkdir::WalkDir;
 
 use crate::read::{read_track, AUDIO_EXTENSIONS};
@@ -14,6 +14,32 @@ use crate::read::{read_track, AUDIO_EXTENSIONS};
 /// Files per database transaction. Big enough to be fast, small enough that a
 /// cancelled scan keeps most of its work and progress stays smooth.
 const BATCH: usize = 250;
+
+/// Where a scan reads and writes library data.
+///
+/// `Db` implements this directly. An app that shares one database between a scan
+/// and the UI implements it over its own lock and takes the lock **per call**, so a
+/// long scan never freezes search or playback.
+pub trait LibraryStore {
+    /// Files already stored for this device, keyed by path.
+    fn stored_files(&mut self) -> Result<HashMap<String, StoredFile>, DbError>;
+    /// Stores a batch in one transaction.
+    fn import_tracks(&mut self, batch: &[TrackImport]) -> Result<ImportCounts, DbError>;
+    /// Forgets files that no longer exist; returns how many were removed.
+    fn remove_files(&mut self, paths: &[String]) -> Result<u32, DbError>;
+}
+
+impl LibraryStore for Db {
+    fn stored_files(&mut self) -> Result<HashMap<String, StoredFile>, DbError> {
+        Db::stored_files(self)
+    }
+    fn import_tracks(&mut self, batch: &[TrackImport]) -> Result<ImportCounts, DbError> {
+        Db::import_tracks(self, batch)
+    }
+    fn remove_files(&mut self, paths: &[String]) -> Result<u32, DbError> {
+        Db::remove_files(self, paths)
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ScanError {
@@ -57,8 +83,8 @@ pub struct ScanReport {
 ///
 /// A file is re-read only when its size or modified time differs from what the
 /// database stored. Unreadable files are reported, never fatal.
-pub fn scan(
-    db: &mut Db,
+pub fn scan<S: LibraryStore>(
+    db: &mut S,
     root: &Path,
     options: &ScanOptions,
     mut progress: impl FnMut(ScanProgress),
@@ -141,8 +167,8 @@ pub fn scan(
     Ok(report)
 }
 
-fn flush(
-    db: &mut Db,
+fn flush<S: LibraryStore>(
+    db: &mut S,
     batch: &mut Vec<TrackImport>,
     report: &mut ScanReport,
 ) -> Result<(), ScanError> {

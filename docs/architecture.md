@@ -51,7 +51,14 @@ Each device keeps its full library locally and works offline. The `change_log` i
 
 ## App shell
 
-`apps/stillwave` is Tauri 2. On start it opens `stillwave.db` in the OS app-data directory, and the placeholder home screen calls the `app_info` command (run on a blocking thread) to show app and core versions, schema version and database path. `gen/android` is committed (Tauri's recommendation); `gen/apple` can only be generated on macOS, so CI generates it (see ios-unsigned-builds.md).
+`apps/stillwave` is Tauri 2 with a React UI. On start it opens `stillwave.db` in the OS app-data directory. The UI talks to Rust only through commands; every command that touches the database or disk runs on a blocking thread, and the database lock is held for one query or one import batch at a time, never across a scan.
+
+- **Scanning:** `start_scan` runs `stillwave-library` on a worker thread through a `LibraryStore` that locks the database per call. Progress arrives as `scan-progress` events and the result as `scan-finished`. A saved folder is rescanned (incrementally) when the app starts.
+- **Library list:** `library_page(query, offset, limit)` returns one page and the total. The UI's list is virtualised (fixed row height, only nearby rows exist in the DOM) and fetches pages as you scroll; search is debounced by 120 ms.
+- **Playback:** `play_from(query, index)` queues the rows from that position (up to 1,000) and plays them with `stillwave-audio`'s `Player`. The player bar polls `player_status` every 250 ms and shows the signal-path badge (Bit-perfect, Processed, Lossy) with the reasons behind it. Device and mode (exclusive, exclusive with mixer fallback, mixer) are chosen in Audio output settings and stored locally.
+- **Platforms:** playback exists on Windows only. On other platforms the commands exist but playing returns a clear error. The folder picker is a desktop feature; it is not expected to work on Android or iOS yet.
+
+`gen/android` is committed (Tauri's recommendation); `gen/apple` can only be generated on macOS, so CI generates it (see ios-unsigned-builds.md).
 
 ## Verified vs not
 

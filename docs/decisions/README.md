@@ -19,3 +19,4 @@ One short record per decision. Decisions listed in `CLAUDE.md` are settled; ask 
 - [0015 Plugin manifest format: TOML](0015-manifest-toml.md)
 - [0016 A separate stillwave-library crate for scanning](0016-library-crate.md)
 - [0017 Phase 1 audio engine design](0017-audio-engine.md)
+- [0018 Library list, scan and player wiring in the app](0018-app-library-and-player-ui.md)
