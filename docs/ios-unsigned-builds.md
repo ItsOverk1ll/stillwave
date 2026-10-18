@@ -1,6 +1,6 @@
 # Unsigned iPhone builds (spike)
 
-**Status: not proven.** This was written on Windows, where iOS cannot be built. Everything below is the plan plus what is known; the first macOS CI run is the real test. Record the outcome here.
+**Status: CI produces an unsigned `.ipa` (15 MB) on macOS 15 / Xcode 16.4, and the built app's Info.plist contains `UIBackgroundModes = [audio]`. Installing it through SideStore on a real iPhone is NOT yet tested.**
 
 ## Goal
 
@@ -14,7 +14,7 @@ An `.ipa` with no code signature that SideStore re-signs with the user's own App
 
 1. `tauri ios init` on macOS generates the Xcode project (`src-tauri/gen/apple`). It cannot run on Windows or Linux, so `gen/apple` is not committed.
 2. `tauri ios build` builds the web assets and the Rust static library. Its export step is allowed to fail.
-3. `xcodebuild archive` with `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""` produces a `.xcarchive` containing an unsigned `.app`.
+3. The archive is produced with code signing switched off (see findings below).
 4. Copy the `.app` into `Payload/` and zip it as `Stillwave-unsigned.ipa`.
 
 ## First CI run findings (macOS 15, Xcode 16.4)
@@ -22,7 +22,9 @@ An `.ipa` with no code signature that SideStore re-signs with the user's own App
 - `tauri ios init --ci` works on the runner and generates the project. **Proven.**
 - Plain `xcodebuild archive` fails: the project's build phase runs `tauri ios xcode-script`, which needs `.tauri/cli-options-server.json` from a running `tauri ios build`. **Proven; this is the risk listed below.**
 - `tauri ios build` fails with "Signing requires a development team" when no team is set.
-- Current fix (untested): run `tauri ios build` and force signing off with an `XCODE_XCCONFIG_FILE` override; take the `.xcarchive` it leaves behind. See `scripts/build-ios-unsigned.sh`.
+- An `XCODE_XCCONFIG_FILE` override did **not** beat the project's automatic signing (same error).
+- **Working fix (proven in CI):** a small `xcodebuild` wrapper first on `PATH` appends `CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=` as command-line settings, which a project cannot override. Tauri still drives the build; its export step fails (expected) and the `.xcarchive` is packaged. See `scripts/build-ios-unsigned.sh`.
+- Still to check on a device: that SideStore accepts and installs the file, and that the app launches.
 
 ## Known risks
 

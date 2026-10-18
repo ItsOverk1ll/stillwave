@@ -17,13 +17,13 @@ Stillwave is an open-source "super Spotify" for music you own: Spotify's comfort
 
 | Platform | Package | Phase 0 state |
 | --- | --- | --- |
-| Windows x64 | NSIS (per-user) and MSI | app builds and runs (verified locally); installers built by CI |
+| Windows x64 | NSIS (per-user) and MSI | app runs (verified locally); installers built by CI |
 | Linux x64 | deb, rpm, AppImage | built by CI only |
 | Linux arm64 / Raspberry Pi OS | deb | built by CI only |
-| Android | sideloaded APK | Rust code cross-compiles locally; APK built by CI only |
-| iPhone | unsigned ipa for SideStore | spike; not yet proven |
+| Android | sideloaded APK | debug APK built by CI; not run on a device |
+| iPhone | unsigned ipa for SideStore | ipa built by CI; not installed on a device |
 
-"Built by CI only" means it has not been run by a person yet. See `docs/` for details.
+"Built by CI" means the artifact exists but nobody has run it yet. See `docs/` for details.
 
 ## Layout
 
