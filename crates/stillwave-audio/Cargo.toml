@@ -1,8 +1,15 @@
 [package]
 name = "stillwave-audio"
+description = "Decoder and output-device interfaces and signal-path model for Stillwave"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
 
 [lints]
 workspace = true
