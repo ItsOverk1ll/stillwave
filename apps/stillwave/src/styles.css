@@ -627,3 +627,39 @@ button.primary {
 .queue li.played {
   opacity: 0.6;
 }
+
+/* ---- playlists and import ------------------------------------------------ */
+
+.row.missing .title,
+.row.missing .sub,
+.row.missing .time {
+  color: var(--muted);
+}
+
+.row.missing .title {
+  font-style: italic;
+}
+
+.import {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.import p {
+  margin: 0 0 0.5rem;
+}
+
+.import .steps {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.import .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

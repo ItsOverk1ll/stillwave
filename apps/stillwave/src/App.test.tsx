@@ -23,6 +23,7 @@ function track(n: number, over: Partial<TrackRow> = {}): TrackRow {
     sampleRateHz: 96_000,
     bitDepth: 24,
     playable: true,
+    inLibrary: true,
     ...over,
   };
 }
@@ -52,6 +53,27 @@ let progressCb: ((p: ScanProgress) => void) | undefined;
 let finishedCb: ((f: ScanFinished) => void) | undefined;
 
 beforeEach(() => {
+  mocked.playlists.mockResolvedValue({
+    playlists: [{ id: "pl-1", name: "Road Trip", description: null, entryCount: 3, ownedCount: 2 }],
+    likedCount: 2,
+    likedOwned: 1,
+  });
+  mocked.playlistDetail.mockResolvedValue({
+    playlist: { id: "pl-1", name: "Road Trip", description: "loud", entryCount: 3, ownedCount: 2 },
+    entries: [
+      track(1),
+      track(9, {
+        id: "ph-1",
+        title: "Not Owned",
+        artistId: null,
+        albumId: null,
+        playable: false,
+        inLibrary: false,
+      }),
+      track(3),
+    ],
+  });
+  mocked.likedDetail.mockResolvedValue([track(2)]);
   progressCb = undefined;
   finishedCb = undefined;
   mocked.getAppInfo.mockResolvedValue({
@@ -405,5 +427,77 @@ describe("browsing", () => {
     await waitFor(() => {
       expect(mocked.jumpTo).toHaveBeenCalledWith(2);
     });
+  });
+});
+
+describe("playlists", () => {
+  it("lists Liked Songs and playlists with how much is in the library", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Playlists" }));
+    const list = await screen.findByRole("list", { name: "Playlist list" });
+    expect(list.textContent).toContain("Liked Songs");
+    expect(list.textContent).toContain("2 songs · 1 in your library");
+    expect(list.textContent).toContain("Road Trip");
+    expect(list.textContent).toContain("3 songs · 2 in your library");
+  });
+
+  it("shows songs not in the library and plays the playlist around them", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Playlists" }));
+    fireEvent.click(await screen.findByText("Road Trip"));
+    const page = await screen.findByRole("region", { name: "Playlist Road Trip" });
+    expect(page.textContent).toContain("not in your library");
+    const missing = screen.getByRole("button", { name: "Play Not Owned" });
+    expect((missing as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    fireEvent.click(screen.getByRole("button", { name: "Play Song 3" }));
+    await waitFor(() => {
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "playlist", id: "pl-1" }, 0);
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "playlist", id: "pl-1" }, 2);
+    });
+  });
+
+  it("opens Liked Songs", async () => {
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Playlists" }));
+    fireEvent.click(await screen.findByText("♥ Liked Songs"));
+    await screen.findByRole("region", { name: "Playlist Liked Songs" });
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    await waitFor(() => {
+      expect(mocked.play).toHaveBeenCalledWith({ kind: "liked" }, 0);
+    });
+  });
+
+  it("imports a Spotify data folder and reports the result", async () => {
+    mocked.pickSpotifyFolder.mockResolvedValue("D:/Spotify Account Data");
+    mocked.importSpotify.mockResolvedValue({
+      playlists: [{ id: "pl-1", name: "Road Trip", total: 3, matched: 2 }],
+      likedTotal: 2,
+      likedMatched: 1,
+      skipped: 1,
+      problems: [],
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Playlists" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import from Spotify…" }));
+    expect(screen.getByText(/never signs in to Spotify/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose Spotify data folder…" }));
+    const status = await screen.findByText(/Imported 1 playlist/);
+    expect(status.parentElement?.textContent).toContain("2 of 3 songs are in your library");
+    expect(status.parentElement?.textContent).toContain("Liked Songs: 1 of 2");
+    expect(mocked.importSpotify).toHaveBeenCalledWith(["D:/Spotify Account Data"]);
+    expect(screen.getByText(/1 podcast episode or audiobook left out/)).toBeTruthy();
+  });
+
+  it("does nothing when the picker is cancelled", async () => {
+    mocked.pickSpotifyFiles.mockResolvedValue([]);
+    render(<App />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Playlists" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import from Spotify…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose CSV or JSON files…" }));
+    await waitFor(() => {
+      expect(mocked.pickSpotifyFiles).toHaveBeenCalled();
+    });
+    expect(mocked.importSpotify).not.toHaveBeenCalled();
   });
 });

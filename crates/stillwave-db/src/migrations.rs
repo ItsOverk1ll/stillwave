@@ -13,6 +13,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0003_sort_key.sql"),
     include_str!("../migrations/0004_album_artist_index.sql"),
     include_str!("../migrations/0005_album_sort_key.sql"),
+    include_str!("../migrations/0006_imports.sql"),
 ];
 
 /// The schema version a fully migrated database reports.

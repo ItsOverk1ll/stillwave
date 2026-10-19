@@ -40,6 +40,8 @@ export interface TrackRow {
   bitDepth: number | null;
   /** False when the file is missing from this device. */
   playable: boolean;
+  /** False for a playlist or Liked Songs entry that is not in the library. */
+  inLibrary: boolean;
 }
 
 export interface Page<T> {
@@ -84,7 +86,9 @@ export interface ArtistDetail {
 export type PlayContext =
   | { kind: "library"; query: string }
   | { kind: "album"; id: string }
-  | { kind: "artist"; id: string };
+  | { kind: "artist"; id: string }
+  | { kind: "playlist"; id: string }
+  | { kind: "liked" };
 
 export interface QueueEntry {
   itemId: string;
@@ -196,3 +200,63 @@ export const onScanFinished = (cb: (f: ScanFinished) => void): Promise<UnlistenF
   listen<ScanFinished>("scan-finished", (e) => {
     cb(e.payload);
   });
+
+// ---- playlists and Spotify import ---------------------------------------------
+
+export interface PlaylistView {
+  id: string;
+  name: string;
+  description: string | null;
+  entryCount: number;
+  /** Entries that are in the library. */
+  ownedCount: number;
+}
+
+export interface PlaylistsView {
+  playlists: PlaylistView[];
+  likedCount: number;
+  likedOwned: number;
+}
+
+export interface PlaylistDetail {
+  playlist: PlaylistView;
+  entries: TrackRow[];
+}
+
+export interface ImportResult {
+  playlists: { id: string; name: string; total: number; matched: number }[];
+  likedTotal: number | null;
+  likedMatched: number | null;
+  /** Podcast episodes and audiobooks, which are not imported. */
+  skipped: number;
+  problems: string[];
+}
+
+export const playlists = (): Promise<PlaylistsView> => invoke<PlaylistsView>("playlists");
+export const playlistDetail = (id: string): Promise<PlaylistDetail> =>
+  invoke<PlaylistDetail>("playlist_detail", { id });
+export const likedDetail = (): Promise<TrackRow[]> => invoke<TrackRow[]>("liked_detail");
+export const importSpotify = (paths: string[]): Promise<ImportResult> =>
+  invoke<ImportResult>("import_spotify", { paths });
+
+/** The unzipped Spotify data download (the folder holding Playlist1.json). */
+export async function pickSpotifyFolder(): Promise<string | null> {
+  const chosen = await open({
+    directory: true,
+    multiple: false,
+    title: "Choose your unzipped Spotify data folder",
+  });
+  return typeof chosen === "string" ? chosen : null;
+}
+
+/** CSV playlist exports, or individual Playlist*.json / YourLibrary.json files. */
+export async function pickSpotifyFiles(): Promise<string[]> {
+  const chosen = await open({
+    directory: false,
+    multiple: true,
+    title: "Choose Spotify playlist files",
+    filters: [{ name: "Playlist exports", extensions: ["csv", "json"] }],
+  });
+  if (chosen == null) return [];
+  return Array.isArray(chosen) ? chosen : [chosen];
+}

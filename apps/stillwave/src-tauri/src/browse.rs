@@ -23,12 +23,25 @@ pub struct TrackRow {
     bit_depth: Option<u8>,
     /// False when the file has gone missing from this device.
     playable: bool,
+    /// False for a song in a playlist or Liked Songs that is not in the library.
+    in_library: bool,
+}
+
+impl TrackRow {
+    /// A song that is not in the library (a placeholder from an import).
+    pub fn missing(r: LibraryRow) -> Self {
+        Self {
+            in_library: false,
+            ..Self::from(r)
+        }
+    }
 }
 
 impl From<LibraryRow> for TrackRow {
     fn from(r: LibraryRow) -> Self {
         Self {
             playable: r.path.is_some(),
+            in_library: true,
             id: r.item_id,
             title: r.title,
             artist: r.artist,

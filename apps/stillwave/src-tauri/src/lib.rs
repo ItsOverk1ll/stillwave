@@ -7,6 +7,7 @@
 
 mod browse;
 mod playback;
+mod playlists;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -263,10 +264,11 @@ async fn start_scan(
             });
             let finished = match result {
                 Ok(r) => {
-                    if let Ok(db) = db.lock() {
+                    if let Ok(mut db) = db.lock() {
                         let _ = db.set_setting("music_folder", &remember);
                         // New rows change the best query plans; keep statistics fresh.
                         let _ = db.optimize();
+                        playlists::after_scan(&mut db);
                     }
                     ScanFinishedEvent {
                         found: r.found,
@@ -329,6 +331,10 @@ enum PlayContext {
     Album { id: String },
     /// Every track by an artist, in library order.
     Artist { id: String },
+    /// A playlist, in order; songs not in the library are skipped.
+    Playlist { id: String },
+    /// Liked songs, oldest first.
+    Liked,
 }
 
 /// Plays `context` starting at its row `index`.
@@ -343,6 +349,22 @@ async fn play(state: State<'_, AppState>, context: PlayContext, index: u32) -> R
             PlayContext::Album { id } => (settings, db.album_tracks(&id)?, index),
             PlayContext::Artist { id } => {
                 (settings, db.artist_tracks(&id, MAX_ARTIST_QUEUE)?, index)
+            }
+            PlayContext::Playlist { id } => {
+                let rows = db.playlist_entries(&id)?;
+                (
+                    settings,
+                    rows.into_iter().map(playlists::entry_row).collect(),
+                    index,
+                )
+            }
+            PlayContext::Liked => {
+                let rows = db.liked_entries()?;
+                (
+                    settings,
+                    rows.into_iter().map(playlists::entry_row).collect(),
+                    index,
+                )
             }
         })
     })
@@ -499,6 +521,10 @@ pub fn run() {
             browse::album_detail,
             browse::artists_page,
             browse::artist_detail,
+            playlists::import_spotify,
+            playlists::playlists,
+            playlists::playlist_detail,
+            playlists::liked_detail,
             play,
             play_queue,
             jump_to,

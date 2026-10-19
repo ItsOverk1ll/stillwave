@@ -10,6 +10,7 @@ mod repo;
 pub use error::DbError;
 pub use migrations::{current_version, latest_version, migrate};
 pub use repo::{
-    AlbumRow, ArtistAlbum, ArtistRow, Db, FileFacts, ImportCounts, LibraryRow, StoredFile,
-    TrackImport,
+    AlbumRow, ArtistAlbum, ArtistRow, Db, EntryRow, FileFacts, ImportCounts, ImportTarget,
+    LibraryRow, MatchCandidate, OpenPlaceholder, PlaceholderSpec, PlaylistImport, PlaylistRow,
+    StoredFile, TrackImport,
 };

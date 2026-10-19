@@ -1,6 +1,6 @@
 # Stillwave
 
-**Status: pre-alpha.** Phase 0 (foundations) is done and Phase 1 (desktop core) is partly built: on Windows the app can scan a music folder, browse it by song, album and artist, search it, and play it through WASAPI with a play queue and a signal-path badge. Nothing has been listened to on a real DAC yet, there is no import, and Linux, Android and iPhone do not play audio yet.
+**Status: pre-alpha.** Phase 0 (foundations) is done and Phase 1 (desktop core) is partly built: on Windows the app can scan a music folder, browse it by song, album and artist, import Spotify playlists and liked songs, search it, and play it through WASAPI with a play queue and a signal-path badge. Nothing has been listened to on a real DAC yet, there is no import, and Linux, Android and iPhone do not play audio yet.
 
 Stillwave is an open-source "super Spotify" for music you own: Spotify's comfort (synced playlists, mixes, radio, offline downloads, a yearly recap, device handoff) on top of bit-perfect playback of your own files. It runs on Windows, Linux, Raspberry Pi, Android and iPhone from one codebase, syncs through an optional account, and grows through sandboxed plugins.
 

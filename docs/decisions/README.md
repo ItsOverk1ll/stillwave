@@ -20,3 +20,4 @@ One short record per decision. Decisions listed in `CLAUDE.md` are settled; ask 
 - [0016 A separate stillwave-library crate for scanning](0016-library-crate.md)
 - [0017 Phase 1 audio engine design](0017-audio-engine.md)
 - [0018 Library list, scan and player wiring in the app](0018-app-library-and-player-ui.md)
+- [0019 Spotify import starts from files, not the Spotify API](0019-spotify-import-from-files.md)

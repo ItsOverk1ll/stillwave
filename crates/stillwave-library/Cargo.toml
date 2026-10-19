@@ -12,9 +12,11 @@ workspace = true
 
 [dependencies]
 lofty = "0.25.4"
+serde_json = "1"
 stillwave-core = { path = "../stillwave-core" }
 stillwave-db = { path = "../stillwave-db" }
 thiserror = "2.0.21"
+unicode-normalization = "0.1"
 walkdir = "2.5.0"
 
 [dev-dependencies]

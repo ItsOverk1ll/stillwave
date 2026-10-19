@@ -556,9 +556,14 @@ fn set_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
 mod browse;
 mod collections;
 mod library;
+mod playlists;
 pub use browse::LibraryRow;
 pub use collections::{AlbumRow, ArtistAlbum, ArtistRow};
 pub use library::{FileFacts, ImportCounts, StoredFile, TrackImport};
+pub use playlists::{
+    EntryRow, ImportTarget, MatchCandidate, OpenPlaceholder, PlaceholderSpec, PlaylistImport,
+    PlaylistRow,
+};
 
 #[cfg(test)]
 mod tests;

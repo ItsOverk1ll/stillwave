@@ -6,8 +6,14 @@
 //! Scanning is blocking and meant to run on a worker thread (never the UI thread);
 //! it reports progress through a callback and stops promptly when cancelled.
 
+mod import;
+pub mod matching;
 mod read;
 mod scan;
+pub mod spotify;
 
+pub use import::{
+    import_spotify, resolve_placeholders, ImportError, ImportSummary, PlaylistResult,
+};
 pub use read::{read_track, ReadError, AUDIO_EXTENSIONS};
 pub use scan::{scan, LibraryStore, ScanError, ScanOptions, ScanProgress, ScanReport};

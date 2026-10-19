@@ -86,7 +86,13 @@ export function TrackRowView({
         className="play"
         disabled={!track.playable}
         aria-label={`Play ${track.title}`}
-        title={track.playable ? "Play from here" : "File not found on this device"}
+        title={
+          track.playable
+            ? "Play from here"
+            : track.inLibrary
+              ? "File not found on this device"
+              : "Not in your library"
+        }
         onClick={onPlay}
       >
         {current ? "♫" : showNumber && track.trackNumber != null ? track.trackNumber : "▶"}
@@ -104,7 +110,7 @@ export function TrackRowView({
               <Link id={track.albumId} text={track.album} onOpen={onOpenAlbum} />
             </>
           )}
-          {!track.playable && " · file missing"}
+          {!track.inLibrary ? " · not in your library" : !track.playable && " · file missing"}
         </div>
       </div>
       {quality && <span className="chip">{quality}</span>}

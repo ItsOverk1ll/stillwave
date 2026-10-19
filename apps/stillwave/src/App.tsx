@@ -7,6 +7,7 @@ import { AlbumList, ArtistList } from "./Collections";
 import { plural } from "./format";
 import { AlbumPage, ArtistPage } from "./Pages";
 import PlayerBar from "./PlayerBar";
+import { PlaylistList, PlaylistPage } from "./Playlists";
 import QueuePanel from "./QueuePanel";
 import TrackList from "./TrackList";
 import { currentItemId, usePlayer } from "./usePlayer";
@@ -17,14 +18,22 @@ type Route =
   | { kind: "songs" }
   | { kind: "albums" }
   | { kind: "artists" }
+  | { kind: "playlists" }
   | { kind: "album"; id: string }
-  | { kind: "artist"; id: string };
+  | { kind: "artist"; id: string }
+  | { kind: "playlist"; id: string }
+  | { kind: "liked" };
 
-const TABS: { kind: "songs" | "albums" | "artists"; label: string }[] = [
+type Tab = "songs" | "albums" | "artists" | "playlists";
+
+const TABS: { kind: Tab; label: string }[] = [
   { kind: "songs", label: "Songs" },
   { kind: "albums", label: "Albums" },
   { kind: "artists", label: "Artists" },
+  { kind: "playlists", label: "Playlists" },
 ];
+
+const TAB_KINDS: readonly string[] = TABS.map((t) => t.kind);
 
 /** Wait this long after the last keystroke before searching. */
 const SEARCH_DELAY_MS = 120;
@@ -176,7 +185,7 @@ export default function App() {
 
   const folder = settings?.musicFolder ?? null;
   const hasLibrary = total !== null && total > 0;
-  const tab = route.kind === "album" || route.kind === "artist" ? null : route.kind;
+  const tab = TAB_KINDS.includes(route.kind) ? route.kind : null;
 
   return (
     <div className="app">
@@ -314,6 +323,29 @@ export default function App() {
           )}
           {route.kind === "artists" && (
             <ArtistList key={version} onOpen={openArtist} onError={report} />
+          )}
+          {route.kind === "playlists" && (
+            <PlaylistList
+              key={version}
+              onOpenPlaylist={(id) => {
+                open({ kind: "playlist", id });
+              }}
+              onOpenLiked={() => {
+                open({ kind: "liked" });
+              }}
+              onError={report}
+            />
+          )}
+          {(route.kind === "playlist" || route.kind === "liked") && (
+            <PlaylistPage
+              key={`${route.kind === "playlist" ? route.id : "liked"}-${version.toString()}`}
+              id={route.kind === "playlist" ? route.id : null}
+              currentId={currentId}
+              onPlay={playFrom}
+              onOpenArtist={openArtist}
+              onOpenAlbum={openAlbum}
+              onError={report}
+            />
           )}
           {route.kind === "album" && (
             <AlbumPage
